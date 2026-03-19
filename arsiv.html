@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolySignal Arsiv</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080c14;
+  --card: #0f1522;
+  --surface: #161e2e;
+  --border: #1c2840;
+  --t1: #f1f5f9;
+  --t2: #94a3b8;
+  --t3: #5a6a82;
+  --green: #10b981;
+  --red: #ef4444;
+  --cyan: #06b6d4;
+  --yellow: #f59e0b;
+  --sans: 'Inter', -apple-system, system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', monospace;
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--t1);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  padding: 24px;
+}
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.header h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.header h1 em { color: var(--cyan); font-style: normal; }
+.header .updated {
+  font-size: 12px;
+  color: var(--t3);
+}
+.stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.stat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 20px;
+  text-align: center;
+  min-width: 120px;
+}
+.stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--t3);
+  margin-bottom: 4px;
+}
+.stat-value {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+}
+.pos { color: var(--green); }
+.neg { color: var(--red); }
+.up { color: var(--green); font-weight: 700; }
+.dn { color: var(--red); font-weight: 700; }
+.table-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--t3);
+  padding: 10px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+thead th:nth-child(1),
+thead th:nth-child(2),
+thead th:nth-child(3),
+thead th:nth-child(4) { text-align: left; }
+tbody td {
+  padding: 8px 10px;
+  text-align: right;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+tbody td:nth-child(1),
+tbody td:nth-child(2),
+tbody td:nth-child(3),
+tbody td:nth-child(4) { text-align: left; }
+tbody tr:hover { background: rgba(255,255,255,.02); }
+tbody td:nth-child(1) { color: var(--t3); font-size: 11px; }
+tbody td:nth-child(2) { color: var(--cyan); }
+tbody td:nth-child(3) { color: var(--t2); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><em>&#9670;</em> Poly<em>Hard</em> — Arsiv</h1>
+  <span class="updated">Son guncelleme: 2026-03-19 16:08</span>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label">Toplam K/Z</div>
+    <div class="stat-value neg">$-855.43</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Market Sayisi</div>
+    <div class="stat-value" style="color:var(--cyan)">64</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Kazanma</div>
+    <div class="stat-value pos">35</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Kaybetme</div>
+    <div class="stat-value neg">29</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Win Rate</div>
+    <div class="stat-value" style="color:var(--yellow)">55%</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Toplam Maliyet</div>
+    <div class="stat-value" style="color:var(--t2)">$28,484</div>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Tarih</th>
+        <th>Saat</th>
+        <th>Kazanan</th>
+        <th>BTC Kapanis</th>
+        <th>PTB</th>
+        <th>UP Sh</th>
+        <th>DN Sh</th>
+        <th>Cift</th>
+        <th>Maliyet</th>
+        <th>Odeme</th>
+        <th>K/Z</th>
+        <th>ROI</th>
+        <th>Kumulatif</th>
+        <th>Fills</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>2026-03-17</td>
+        <td>17:54:55</td>
+        <td class="up">YKR</td>
+        <td>$74,290.30</td>
+        <td>$74,270.79</td>
+        <td>504</td>
+        <td>532</td>
+        <td>504</td>
+        <td>$498.51</td>
+        <td>$504.20</td>
+        <td class="pos">$+5.68</td>
+        <td>+1.1%</td>
+        <td class="pos">$+5.68</td>
+        <td>67</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>2026-03-17</td>
+        <td>17:59:55</td>
+        <td class="up">YKR</td>
+        <td>$74,376.95</td>
+        <td>$74,296.57</td>
+        <td>240</td>
+        <td>249</td>
+        <td>240</td>
+        <td>$237.24</td>
+        <td>$240.20</td>
+        <td class="pos">$+2.96</td>
+        <td>+1.2%</td>
+        <td class="pos">$+8.65</td>
+        <td>33</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>2026-03-17</td>
+        <td>18:04:55</td>
+        <td class="up">YKR</td>
+        <td>$74,695.84</td>
+        <td>$74,651.18</td>
+        <td>0</td>
+        <td>21</td>
+        <td>0</td>
+        <td>$0.31</td>
+        <td>$0.00</td>
+        <td class="neg">$-0.31</td>
+        <td>-100.0%</td>
+        <td class="pos">$+8.34</td>
+        <td>2</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>2026-03-17</td>
+        <td>18:09:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,360.01</td>
+        <td>$74,676.55</td>
+        <td>94</td>
+        <td>69</td>
+        <td>69</td>
+        <td>$74.16</td>
+        <td>$68.70</td>
+        <td class="neg">$-5.46</td>
+        <td>-7.4%</td>
+        <td class="pos">$+2.88</td>
+        <td>10</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>2026-03-17</td>
+        <td>18:15:29</td>
+        <td class="dn">ASG</td>
+        <td>$74,169.99</td>
+        <td>$74,303.30</td>
+        <td>448</td>
+        <td>134</td>
+        <td>134</td>
+        <td>$149.91</td>
+        <td>$133.70</td>
+        <td class="neg">$-16.21</td>
+        <td>-10.8%</td>
+        <td class="neg">$-13.33</td>
+        <td>17</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>2026-03-17</td>
+        <td>21:44:55</td>
+        <td class="up">YKR</td>
+        <td>$74,673.57</td>
+        <td>$74,500.01</td>
+        <td>291</td>
+        <td>302</td>
+        <td>291</td>
+        <td>$295.45</td>
+        <td>$291.20</td>
+        <td class="neg">$-4.25</td>
+        <td>-1.4%</td>
+        <td class="neg">$-17.58</td>
+        <td>41</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>2026-03-17</td>
+        <td>21:49:55</td>
+        <td class="up">YKR</td>
+        <td>$74,696.52</td>
+        <td>$74,612.85</td>
+        <td>21</td>
+        <td>21</td>
+        <td>21</td>
+        <td>$19.98</td>
+        <td>$20.70</td>
+        <td class="pos">$+0.72</td>
+        <td>+3.6%</td>
+        <td class="neg">$-16.85</td>
+        <td>4</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td>2026-03-17</td>
+        <td>21:54:55</td>
+        <td class="up">YKR</td>
+        <td>$74,755.89</td>
+        <td>$74,702.86</td>
+        <td>294</td>
+        <td>316</td>
+        <td>294</td>
+        <td>$301.19</td>
+        <td>$294.30</td>
+        <td class="neg">$-6.89</td>
+        <td>-2.3%</td>
+        <td class="neg">$-23.74</td>
+        <td>40</td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td>2026-03-17</td>
+        <td>21:59:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,686.25</td>
+        <td>$74,769.16</td>
+        <td>135</td>
+        <td>114</td>
+        <td>114</td>
+        <td>$137.52</td>
+        <td>$113.70</td>
+        <td class="neg">$-23.82</td>
+        <td>-17.3%</td>
+        <td class="neg">$-47.56</td>
+        <td>23</td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td>2026-03-17</td>
+        <td>22:04:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,669.70</td>
+        <td>$74,678.77</td>
+        <td>547</td>
+        <td>539</td>
+        <td>539</td>
+        <td>$519.94</td>
+        <td>$539.20</td>
+        <td class="pos">$+19.26</td>
+        <td>+3.7%</td>
+        <td class="neg">$-28.30</td>
+        <td>79</td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td>2026-03-17</td>
+        <td>22:09:55</td>
+        <td class="up">YKR</td>
+        <td>$74,736.16</td>
+        <td>$74,654.06</td>
+        <td>244</td>
+        <td>292</td>
+        <td>244</td>
+        <td>$269.93</td>
+        <td>$243.90</td>
+        <td class="neg">$-26.03</td>
+        <td>-9.6%</td>
+        <td class="neg">$-54.34</td>
+        <td>31</td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td>2026-03-17</td>
+        <td>22:14:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,726.40</td>
+        <td>$74,736.16</td>
+        <td>544</td>
+        <td>557</td>
+        <td>544</td>
+        <td>$533.66</td>
+        <td>$556.60</td>
+        <td class="pos">$+22.94</td>
+        <td>+4.3%</td>
+        <td class="neg">$-31.40</td>
+        <td>82</td>
+      </tr>
+      <tr>
+        <td>13</td>
+        <td>2026-03-17</td>
+        <td>22:19:55</td>
+        <td class="up">YKR</td>
+        <td>$74,798.74</td>
+        <td>$74,794.23</td>
+        <td>93</td>
+        <td>116</td>
+        <td>93</td>
+        <td>$99.93</td>
+        <td>$92.90</td>
+        <td class="neg">$-7.03</td>
+        <td>-7.0%</td>
+        <td class="neg">$-38.43</td>
+        <td>12</td>
+      </tr>
+      <tr>
+        <td>14</td>
+        <td>2026-03-17</td>
+        <td>22:24:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,703.99</td>
+        <td>$74,729.08</td>
+        <td>56</td>
+        <td>141</td>
+        <td>56</td>
+        <td>$99.96</td>
+        <td>$141.30</td>
+        <td class="pos">$+41.34</td>
+        <td>+41.4%</td>
+        <td class="pos">$+2.91</td>
+        <td>13</td>
+      </tr>
+      <tr>
+        <td>15</td>
+        <td>2026-03-17</td>
+        <td>22:29:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,631.28</td>
+        <td>$74,750.00</td>
+        <td>97</td>
+        <td>110</td>
+        <td>97</td>
+        <td>$99.98</td>
+        <td>$110.40</td>
+        <td class="pos">$+10.42</td>
+        <td>+10.4%</td>
+        <td class="pos">$+13.34</td>
+        <td>12</td>
+      </tr>
+      <tr>
+        <td>16</td>
+        <td>2026-03-17</td>
+        <td>22:34:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,530.16</td>
+        <td>$74,601.45</td>
+        <td>76</td>
+        <td>118</td>
+        <td>76</td>
+        <td>$99.86</td>
+        <td>$117.90</td>
+        <td class="pos">$+18.04</td>
+        <td>+18.1%</td>
+        <td class="pos">$+31.37</td>
+        <td>13</td>
+      </tr>
+      <tr>
+        <td>17</td>
+        <td>2026-03-17</td>
+        <td>22:39:55</td>
+        <td class="up">YKR</td>
+        <td>$74,719.18</td>
+        <td>$74,571.99</td>
+        <td>48</td>
+        <td>76</td>
+        <td>48</td>
+        <td>$53.44</td>
+        <td>$48.10</td>
+        <td class="neg">$-5.34</td>
+        <td>-10.0%</td>
+        <td class="pos">$+26.03</td>
+        <td>7</td>
+      </tr>
+      <tr>
+        <td>18</td>
+        <td>2026-03-17</td>
+        <td>22:44:55</td>
+        <td class="up">YKR</td>
+        <td>$74,673.85</td>
+        <td>$74,657.70</td>
+        <td>106</td>
+        <td>73</td>
+        <td>73</td>
+        <td>$83.04</td>
+        <td>$106.00</td>
+        <td class="pos">$+22.96</td>
+        <td>+27.6%</td>
+        <td class="pos">$+48.99</td>
+        <td>17</td>
+      </tr>
+      <tr>
+        <td>19</td>
+        <td>2026-03-17</td>
+        <td>22:49:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,557.67</td>
+        <td>$74,685.88</td>
+        <td>307</td>
+        <td>288</td>
+        <td>288</td>
+        <td>$301.86</td>
+        <td>$287.70</td>
+        <td class="neg">$-14.16</td>
+        <td>-4.7%</td>
+        <td class="pos">$+34.82</td>
+        <td>44</td>
+      </tr>
+      <tr>
+        <td>20</td>
+        <td>2026-03-17</td>
+        <td>22:54:55</td>
+        <td class="up">YKR</td>
+        <td>$74,532.61</td>
+        <td>$74,526.72</td>
+        <td>1124</td>
+        <td>1090</td>
+        <td>1090</td>
+        <td>$1064.90</td>
+        <td>$1124.40</td>
+        <td class="pos">$+59.50</td>
+        <td>+5.6%</td>
+        <td class="pos">$+94.32</td>
+        <td>159</td>
+      </tr>
+      <tr>
+        <td>21</td>
+        <td>2026-03-17</td>
+        <td>22:59:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,515.87</td>
+        <td>$74,522.46</td>
+        <td>1050</td>
+        <td>1079</td>
+        <td>1050</td>
+        <td>$1051.74</td>
+        <td>$1079.50</td>
+        <td class="pos">$+27.76</td>
+        <td>+2.6%</td>
+        <td class="pos">$+122.09</td>
+        <td>172</td>
+      </tr>
+      <tr>
+        <td>22</td>
+        <td>2026-03-17</td>
+        <td>23:04:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,446.24</td>
+        <td>$74,508.26</td>
+        <td>10</td>
+        <td>10</td>
+        <td>10</td>
+        <td>$9.97</td>
+        <td>$10.50</td>
+        <td class="pos">$+0.53</td>
+        <td>+5.3%</td>
+        <td class="pos">$+122.61</td>
+        <td>2</td>
+      </tr>
+      <tr>
+        <td>23</td>
+        <td>2026-03-17</td>
+        <td>23:09:55</td>
+        <td class="up">YKR</td>
+        <td>$74,459.01</td>
+        <td>$74,417.43</td>
+        <td>31</td>
+        <td>31</td>
+        <td>31</td>
+        <td>$29.97</td>
+        <td>$30.90</td>
+        <td class="pos">$+0.93</td>
+        <td>+3.1%</td>
+        <td class="pos">$+123.54</td>
+        <td>6</td>
+      </tr>
+      <tr>
+        <td>24</td>
+        <td>2026-03-17</td>
+        <td>23:14:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,372.18</td>
+        <td>$74,444.03</td>
+        <td>1042</td>
+        <td>1065</td>
+        <td>1042</td>
+        <td>$999.62</td>
+        <td>$1065.00</td>
+        <td class="pos">$+65.38</td>
+        <td>+6.5%</td>
+        <td class="pos">$+188.91</td>
+        <td>150</td>
+      </tr>
+      <tr>
+        <td>25</td>
+        <td>2026-03-17</td>
+        <td>23:19:55</td>
+        <td class="up">YKR</td>
+        <td>$74,458.67</td>
+        <td>$74,393.24</td>
+        <td>655</td>
+        <td>686</td>
+        <td>655</td>
+        <td>$649.97</td>
+        <td>$654.80</td>
+        <td class="pos">$+4.83</td>
+        <td>+0.7%</td>
+        <td class="pos">$+193.75</td>
+        <td>89</td>
+      </tr>
+      <tr>
+        <td>26</td>
+        <td>2026-03-17</td>
+        <td>23:24:55</td>
+        <td class="up">YKR</td>
+        <td>$74,628.87</td>
+        <td>$74,485.56</td>
+        <td>976</td>
+        <td>1098</td>
+        <td>976</td>
+        <td>$979.91</td>
+        <td>$976.30</td>
+        <td class="neg">$-3.61</td>
+        <td>-0.4%</td>
+        <td class="pos">$+190.14</td>
+        <td>139</td>
+      </tr>
+      <tr>
+        <td>27</td>
+        <td>2026-03-17</td>
+        <td>23:29:55</td>
+        <td class="up">YKR</td>
+        <td>$74,652.27</td>
+        <td>$74,625.10</td>
+        <td>997</td>
+        <td>984</td>
+        <td>984</td>
+        <td>$934.82</td>
+        <td>$996.80</td>
+        <td class="pos">$+61.98</td>
+        <td>+6.6%</td>
+        <td class="pos">$+252.12</td>
+        <td>125</td>
+      </tr>
+      <tr>
+        <td>28</td>
+        <td>2026-03-17</td>
+        <td>23:34:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,557.14</td>
+        <td>$74,652.27</td>
+        <td>488</td>
+        <td>464</td>
+        <td>464</td>
+        <td>$480.49</td>
+        <td>$464.20</td>
+        <td class="neg">$-16.29</td>
+        <td>-3.4%</td>
+        <td class="pos">$+235.83</td>
+        <td>64</td>
+      </tr>
+      <tr>
+        <td>29</td>
+        <td>2026-03-17</td>
+        <td>23:39:55</td>
+        <td class="up">YKR</td>
+        <td>$74,579.57</td>
+        <td>$74,557.33</td>
+        <td>1042</td>
+        <td>1014</td>
+        <td>1014</td>
+        <td>$990.69</td>
+        <td>$1042.00</td>
+        <td class="pos">$+51.31</td>
+        <td>+5.2%</td>
+        <td class="pos">$+287.14</td>
+        <td>146</td>
+      </tr>
+      <tr>
+        <td>30</td>
+        <td>2026-03-17</td>
+        <td>23:44:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,506.04</td>
+        <td>$74,573.74</td>
+        <td>42</td>
+        <td>42</td>
+        <td>42</td>
+        <td>$39.86</td>
+        <td>$42.40</td>
+        <td class="pos">$+2.54</td>
+        <td>+6.4%</td>
+        <td class="pos">$+289.68</td>
+        <td>8</td>
+      </tr>
+      <tr>
+        <td>31</td>
+        <td>2026-03-17</td>
+        <td>23:49:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,536.81</td>
+        <td>$74,550.37</td>
+        <td>1683</td>
+        <td>1675</td>
+        <td>1675</td>
+        <td>$1593.35</td>
+        <td>$1675.30</td>
+        <td class="pos">$+81.95</td>
+        <td>+5.1%</td>
+        <td class="pos">$+371.63</td>
+        <td>224</td>
+      </tr>
+      <tr>
+        <td>32</td>
+        <td>2026-03-17</td>
+        <td>23:54:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,520.68</td>
+        <td>$74,552.31</td>
+        <td>1729</td>
+        <td>1728</td>
+        <td>1728</td>
+        <td>$1634.41</td>
+        <td>$1727.70</td>
+        <td class="pos">$+93.29</td>
+        <td>+5.7%</td>
+        <td class="pos">$+464.92</td>
+        <td>251</td>
+      </tr>
+      <tr>
+        <td>33</td>
+        <td>2026-03-17</td>
+        <td>23:59:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,511.76</td>
+        <td>$74,520.67</td>
+        <td>2148</td>
+        <td>2139</td>
+        <td>2139</td>
+        <td>$2004.44</td>
+        <td>$2138.50</td>
+        <td class="pos">$+134.06</td>
+        <td>+6.7%</td>
+        <td class="pos">$+598.98</td>
+        <td>291</td>
+      </tr>
+      <tr>
+        <td>34</td>
+        <td>2026-03-18</td>
+        <td>00:04:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,499.57</td>
+        <td>$74,523.90</td>
+        <td>1317</td>
+        <td>1332</td>
+        <td>1317</td>
+        <td>$1308.44</td>
+        <td>$1331.90</td>
+        <td class="pos">$+23.46</td>
+        <td>+1.8%</td>
+        <td class="pos">$+622.44</td>
+        <td>197</td>
+      </tr>
+      <tr>
+        <td>35</td>
+        <td>2026-03-18</td>
+        <td>00:09:55</td>
+        <td class="up">YKR</td>
+        <td>$74,546.76</td>
+        <td>$74,524.27</td>
+        <td>11</td>
+        <td>26</td>
+        <td>11</td>
+        <td>$14.25</td>
+        <td>$10.90</td>
+        <td class="neg">$-3.35</td>
+        <td>-23.5%</td>
+        <td class="pos">$+619.09</td>
+        <td>7</td>
+      </tr>
+      <tr>
+        <td>36</td>
+        <td>2026-03-18</td>
+        <td>00:14:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,697.07</td>
+        <td>$74,740.20</td>
+        <td>10</td>
+        <td>16</td>
+        <td>10</td>
+        <td>$10.14</td>
+        <td>$15.60</td>
+        <td class="pos">$+5.46</td>
+        <td>+53.8%</td>
+        <td class="pos">$+624.55</td>
+        <td>5</td>
+      </tr>
+      <tr>
+        <td>37</td>
+        <td>2026-03-18</td>
+        <td>00:19:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,630.48</td>
+        <td>$74,632.00</td>
+        <td>531</td>
+        <td>28</td>
+        <td>28</td>
+        <td>$32.15</td>
+        <td>$27.89</td>
+        <td class="neg">$-4.26</td>
+        <td>-13.3%</td>
+        <td class="pos">$+620.28</td>
+        <td>25</td>
+      </tr>
+      <tr>
+        <td>38</td>
+        <td>2026-03-18</td>
+        <td>00:24:55</td>
+        <td class="up">YKR</td>
+        <td>$74,634.37</td>
+        <td>$74,618.10</td>
+        <td>149</td>
+        <td>94</td>
+        <td>94</td>
+        <td>$125.42</td>
+        <td>$149.10</td>
+        <td class="pos">$+23.68</td>
+        <td>+18.9%</td>
+        <td class="pos">$+643.96</td>
+        <td>58</td>
+      </tr>
+      <tr>
+        <td>39</td>
+        <td>2026-03-18</td>
+        <td>00:29:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,554.87</td>
+        <td>$74,621.93</td>
+        <td>527</td>
+        <td>399</td>
+        <td>399</td>
+        <td>$455.66</td>
+        <td>$398.51</td>
+        <td class="neg">$-57.15</td>
+        <td>-12.5%</td>
+        <td class="pos">$+586.81</td>
+        <td>123</td>
+      </tr>
+      <tr>
+        <td>40</td>
+        <td>2026-03-18</td>
+        <td>00:34:55</td>
+        <td class="up">YKR</td>
+        <td>$74,593.50</td>
+        <td>$74,544.87</td>
+        <td>820</td>
+        <td>1833</td>
+        <td>820</td>
+        <td>$1386.15</td>
+        <td>$820.43</td>
+        <td class="neg">$-565.71</td>
+        <td>-40.8%</td>
+        <td class="pos">$+21.09</td>
+        <td>289</td>
+      </tr>
+      <tr>
+        <td>41</td>
+        <td>2026-03-18</td>
+        <td>00:44:55</td>
+        <td class="up">YKR</td>
+        <td>$74,736.93</td>
+        <td>$74,734.44</td>
+        <td>1194</td>
+        <td>1043</td>
+        <td>1043</td>
+        <td>$1219.43</td>
+        <td>$1193.60</td>
+        <td class="neg">$-25.83</td>
+        <td>-2.1%</td>
+        <td class="neg">$-4.74</td>
+        <td>247</td>
+      </tr>
+      <tr>
+        <td>42</td>
+        <td>2026-03-18</td>
+        <td>00:54:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,695.07</td>
+        <td>$74,703.89</td>
+        <td>906</td>
+        <td>945</td>
+        <td>906</td>
+        <td>$967.29</td>
+        <td>$945.07</td>
+        <td class="neg">$-22.22</td>
+        <td>-2.3%</td>
+        <td class="neg">$-26.95</td>
+        <td>179</td>
+      </tr>
+      <tr>
+        <td>43</td>
+        <td>2026-03-18</td>
+        <td>00:59:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,685.42</td>
+        <td>$74,695.06</td>
+        <td>984</td>
+        <td>1324</td>
+        <td>984</td>
+        <td>$1161.22</td>
+        <td>$1323.72</td>
+        <td class="pos">$+162.51</td>
+        <td>+14.0%</td>
+        <td class="pos">$+135.55</td>
+        <td>290</td>
+      </tr>
+      <tr>
+        <td>44</td>
+        <td>2026-03-18</td>
+        <td>05:12:26</td>
+        <td class="up">YKR</td>
+        <td>$73,959.89</td>
+        <td>$73,959.89</td>
+        <td>8</td>
+        <td>5</td>
+        <td>5</td>
+        <td>$6.78</td>
+        <td>$8.00</td>
+        <td class="pos">$+1.22</td>
+        <td>+17.9%</td>
+        <td class="pos">$+136.77</td>
+        <td>3</td>
+      </tr>
+      <tr>
+        <td>45</td>
+        <td>2026-03-18</td>
+        <td>07:24:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,323.75</td>
+        <td>$74,368.10</td>
+        <td>221</td>
+        <td>208</td>
+        <td>208</td>
+        <td>$210.18</td>
+        <td>$208.50</td>
+        <td class="neg">$-1.68</td>
+        <td>-0.8%</td>
+        <td class="pos">$+135.08</td>
+        <td>48</td>
+      </tr>
+      <tr>
+        <td>46</td>
+        <td>2026-03-18</td>
+        <td>07:29:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,253.79</td>
+        <td>$74,323.75</td>
+        <td>272</td>
+        <td>255</td>
+        <td>255</td>
+        <td>$259.78</td>
+        <td>$254.70</td>
+        <td class="neg">$-5.08</td>
+        <td>-2.0%</td>
+        <td class="pos">$+130.00</td>
+        <td>86</td>
+      </tr>
+      <tr>
+        <td>47</td>
+        <td>2026-03-18</td>
+        <td>07:34:55</td>
+        <td class="dn">ASG</td>
+        <td>$74,216.90</td>
+        <td>$74,250.18</td>
+        <td>447</td>
+        <td>181</td>
+        <td>181</td>
+        <td>$239.92</td>
+        <td>$181.40</td>
+        <td class="neg">$-58.52</td>
+        <td>-24.4%</td>
+        <td class="pos">$+71.48</td>
+        <td>60</td>
+      </tr>
+      <tr>
+        <td>48</td>
+        <td>2026-03-18</td>
+        <td>07:39:55</td>
+        <td class="up">YKR</td>
+        <td>$74,224.23</td>
+        <td>$74,220.31</td>
+        <td>257</td>
+        <td>499</td>
+        <td>257</td>
+        <td>$343.60</td>
+        <td>$256.83</td>
+        <td class="neg">$-86.77</td>
+        <td>-25.3%</td>
+        <td class="neg">$-15.28</td>
+        <td>96</td>
+      </tr>
+      <tr>
+        <td>49</td>
+        <td>2026-03-18</td>
+        <td>07:54:55</td>
+        <td class="up">YKR</td>
+        <td>$74,180.02</td>
+        <td>$74,176.40</td>
+        <td>1061</td>
+        <td>1033</td>
+        <td>1033</td>
+        <td>$1030.05</td>
+        <td>$1061.00</td>
+        <td class="pos">$+30.95</td>
+        <td>+3.0%</td>
+        <td class="pos">$+15.67</td>
+        <td>232</td>
+      </tr>
+      <tr>
+        <td>50</td>
+        <td>2026-03-18</td>
+        <td>21:04:55</td>
+        <td class="dn">ASG</td>
+        <td>$71,945.96</td>
+        <td>$74,173.87</td>
+        <td>87</td>
+        <td>144</td>
+        <td>87</td>
+        <td>$91.92</td>
+        <td>$144.30</td>
+        <td class="pos">$+52.38</td>
+        <td>+57.0%</td>
+        <td class="pos">$+68.06</td>
+        <td>39</td>
+      </tr>
+      <tr>
+        <td>51</td>
+        <td>2026-03-18</td>
+        <td>21:09:55</td>
+        <td class="dn">ASG</td>
+        <td>$71,881.02</td>
+        <td>$71,894.09</td>
+        <td>113</td>
+        <td>95</td>
+        <td>95</td>
+        <td>$100.18</td>
+        <td>$94.89</td>
+        <td class="neg">$-5.29</td>
+        <td>-5.3%</td>
+        <td class="pos">$+62.77</td>
+        <td>63</td>
+      </tr>
+      <tr>
+        <td>52</td>
+        <td>2026-03-18</td>
+        <td>21:14:55</td>
+        <td class="up">YKR</td>
+        <td>$71,880.04</td>
+        <td>$71,873.66</td>
+        <td>131</td>
+        <td>104</td>
+        <td>104</td>
+        <td>$115.62</td>
+        <td>$130.80</td>
+        <td class="pos">$+15.18</td>
+        <td>+13.1%</td>
+        <td class="pos">$+77.95</td>
+        <td>46</td>
+      </tr>
+      <tr>
+        <td>53</td>
+        <td>2026-03-18</td>
+        <td>21:38:30</td>
+        <td class="dn">ASG</td>
+        <td>$71,767.73</td>
+        <td>$71,860.26</td>
+        <td>113</td>
+        <td>91</td>
+        <td>91</td>
+        <td>$91.24</td>
+        <td>$91.10</td>
+        <td class="neg">$-0.14</td>
+        <td>-0.2%</td>
+        <td class="pos">$+77.81</td>
+        <td>41</td>
+      </tr>
+      <tr>
+        <td>54</td>
+        <td>2026-03-19</td>
+        <td>15:09:55</td>
+        <td class="dn">ASG</td>
+        <td>$69,678.22</td>
+        <td>$69,802.79</td>
+        <td>188</td>
+        <td>189</td>
+        <td>188</td>
+        <td>$186.95</td>
+        <td>$189.50</td>
+        <td class="pos">$+2.55</td>
+        <td>+1.4%</td>
+        <td class="pos">$+80.36</td>
+        <td>47</td>
+      </tr>
+      <tr>
+        <td>55</td>
+        <td>2026-03-19</td>
+        <td>15:14:55</td>
+        <td class="up">YKR</td>
+        <td>$69,799.83</td>
+        <td>$69,705.54</td>
+        <td>234</td>
+        <td>241</td>
+        <td>234</td>
+        <td>$230.59</td>
+        <td>$233.60</td>
+        <td class="pos">$+3.01</td>
+        <td>+1.3%</td>
+        <td class="pos">$+83.37</td>
+        <td>41</td>
+      </tr>
+      <tr>
+        <td>56</td>
+        <td>2026-03-19</td>
+        <td>15:24:55</td>
+        <td class="up">YKR</td>
+        <td>$69,692.38</td>
+        <td>$69,671.94</td>
+        <td>120</td>
+        <td>42</td>
+        <td>42</td>
+        <td>$95.02</td>
+        <td>$119.70</td>
+        <td class="pos">$+24.68</td>
+        <td>+26.0%</td>
+        <td class="pos">$+108.05</td>
+        <td>27</td>
+      </tr>
+      <tr>
+        <td>57</td>
+        <td>2026-03-19</td>
+        <td>15:29:55</td>
+        <td class="dn">ASG</td>
+        <td>$69,609.18</td>
+        <td>$69,701.42</td>
+        <td>108</td>
+        <td>58</td>
+        <td>58</td>
+        <td>$100.00</td>
+        <td>$58.18</td>
+        <td class="neg">$-41.82</td>
+        <td>-41.8%</td>
+        <td class="pos">$+66.22</td>
+        <td>30</td>
+      </tr>
+      <tr>
+        <td>58</td>
+        <td>2026-03-19</td>
+        <td>15:34:55</td>
+        <td class="up">YKR</td>
+        <td>$69,586.68</td>
+        <td>$69,583.55</td>
+        <td>62</td>
+        <td>122</td>
+        <td>62</td>
+        <td>$99.99</td>
+        <td>$62.10</td>
+        <td class="neg">$-37.89</td>
+        <td>-37.9%</td>
+        <td class="pos">$+28.33</td>
+        <td>27</td>
+      </tr>
+      <tr>
+        <td>59</td>
+        <td>2026-03-19</td>
+        <td>15:39:55</td>
+        <td class="up">YKR</td>
+        <td>$69,639.93</td>
+        <td>$69,610.07</td>
+        <td>122</td>
+        <td>0</td>
+        <td>0</td>
+        <td>$97.67</td>
+        <td>$122.04</td>
+        <td class="pos">$+24.38</td>
+        <td>+25.0%</td>
+        <td class="pos">$+52.71</td>
+        <td>29</td>
+      </tr>
+      <tr>
+        <td>60</td>
+        <td>2026-03-19</td>
+        <td>15:44:55</td>
+        <td class="up">YKR</td>
+        <td>$69,644.11</td>
+        <td>$69,644.10</td>
+        <td>153</td>
+        <td>0</td>
+        <td>0</td>
+        <td>$99.99</td>
+        <td>$152.89</td>
+        <td class="pos">$+52.90</td>
+        <td>+52.9%</td>
+        <td class="pos">$+105.61</td>
+        <td>39</td>
+      </tr>
+      <tr>
+        <td>61</td>
+        <td>2026-03-19</td>
+        <td>15:49:55</td>
+        <td class="dn">ASG</td>
+        <td>$69,510.02</td>
+        <td>$69,625.11</td>
+        <td>0</td>
+        <td>76</td>
+        <td>0</td>
+        <td>$34.97</td>
+        <td>$76.10</td>
+        <td class="pos">$+41.13</td>
+        <td>+117.6%</td>
+        <td class="pos">$+146.74</td>
+        <td>6</td>
+      </tr>
+      <tr>
+        <td>62</td>
+        <td>2026-03-19</td>
+        <td>15:54:55</td>
+        <td class="dn">ASG</td>
+        <td>$69,311.18</td>
+        <td>$69,509.24</td>
+        <td>36</td>
+        <td>62</td>
+        <td>36</td>
+        <td>$79.58</td>
+        <td>$62.40</td>
+        <td class="neg">$-17.18</td>
+        <td>-21.6%</td>
+        <td class="pos">$+129.56</td>
+        <td>23</td>
+      </tr>
+      <tr>
+        <td>63</td>
+        <td>2026-03-19</td>
+        <td>15:59:55</td>
+        <td class="dn">ASG</td>
+        <td>$69,285.67</td>
+        <td>$69,291.02</td>
+        <td>1440</td>
+        <td>110</td>
+        <td>110</td>
+        <td>$1000.02</td>
+        <td>$109.57</td>
+        <td class="neg">$-890.45</td>
+        <td>-89.0%</td>
+        <td class="neg">$-760.89</td>
+        <td>115</td>
+      </tr>
+      <tr>
+        <td>64</td>
+        <td>2026-03-19</td>
+        <td>16:04:55</td>
+        <td class="up">YKR</td>
+        <td>$69,404.58</td>
+        <td>$69,284.20</td>
+        <td>855</td>
+        <td>1076</td>
+        <td>855</td>
+        <td>$950.03</td>
+        <td>$855.50</td>
+        <td class="neg">$-94.53</td>
+        <td>-10.0%</td>
+        <td class="neg">$-855.43</td>
+        <td>187</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>
