@@ -21,14 +21,14 @@ log = setup_logger("main")
 async def run():
     config = BotConfig()
     strategy = LimitBotStrategy(config=config)
-    dashboard = DashboardServer(strategy=strategy, port=8897)
+    dashboard = DashboardServer(strategy=strategy, port=8898)
     strategy.dashboard = dashboard
 
     await dashboard.start()
 
     print("\n" + "=" * 50)
     print("  PolySignal — Otomatik Sniper")
-    print("  Dashboard: http://localhost:8897")
+    print("  Dashboard: http://localhost:8898")
     print("=" * 50)
     print("  Otomatik calisir — ¢75-80 + BTC>=$65 + son 120s")
     print("=" * 50 + "\n")
