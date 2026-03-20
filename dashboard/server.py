@@ -1,12 +1,23 @@
 """Limit order bot dashboard — BUY/SELL buttons, orderbook, positions."""
 
 import asyncio
+import hashlib
 import json
+import os
 import time
 from aiohttp import web
 from utils.logger import setup_logger
 
 log = setup_logger("dashboard")
+
+# Dashboard sifresi: .env'den DASHBOARD_PASSWORD, yoksa local kullanim icin "1"
+_DASH_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
+if not _DASH_PASSWORD:
+    _DASH_PASSWORD = "1"
+    log.info("DASHBOARD_PASSWORD ayarlanmamis! Varsayilan local sifre: %s", _DASH_PASSWORD)
+
+# Token: sifrenin hash'i — cookie olarak saklanir
+_AUTH_TOKEN = hashlib.sha256(_DASH_PASSWORD.encode()).hexdigest()[:32]
 
 
 class DashboardServer:
@@ -17,8 +28,14 @@ class DashboardServer:
         self._ws_clients: list[web.WebSocketResponse] = []
         self._app = web.Application()
         self._app.router.add_get("/", self._serve_html)
+        self._app.router.add_post("/login", self._handle_login)
         self._app.router.add_get("/ws", self._ws_handler)
         self._push_task = None
+
+    def _check_auth(self, request) -> bool:
+        """Cookie'den auth token kontrolu."""
+        token = request.cookies.get("ps_auth", "")
+        return token == _AUTH_TOKEN
 
     async def start(self):
         runner = web.AppRunner(self._app)
@@ -67,6 +84,12 @@ class DashboardServer:
         dn_wins_pnl = pf.get("dn_wins_pnl", 0)
         up_roi = round(up_wins_pnl / total_cost * 100, 1) if total_cost > 0 else 0
         dn_roi = round(dn_wins_pnl / total_cost * 100, 1) if total_cost > 0 else 0
+        signal_state = s.signal_tracker.current() if s.signal_tracker else {
+            "state": "NEUTRAL", "up_mid": 0, "dn_mid": 0,
+            "spread_pct": 0, "confidence": 0, "checks": 0, "signals_fired": 0,
+        }
+        spread_pct = signal_state.get("spread_pct", 0) or 0
+        vol_label = "LOW" if spread_pct < 40 else "HIGH" if spread_pct > 120 else "MID"
 
         return {
             "ts": now,
@@ -75,7 +98,7 @@ class DashboardServer:
             "budget": s.budget,
             "market_question": s._market_question,
             "time_remaining": max(0, s._market_end_time - now) if s._market_end_time else None,
-            "btc_price": s.btc_feed.state() if s.btc_feed else None,
+            "btc_price": None,
             "up_price": up_p, "down_price": dn_p,
             "up_shares": up_shares, "down_shares": dn_shares,
             "up_cost": up_cost, "down_cost": dn_cost,
@@ -107,27 +130,45 @@ class DashboardServer:
             "stats": s.stats,
             "process_log": s.process_log[-20:],
             "order_archive": (s.order_archive or [])[-50:],
-            "market_history": s.market_history[-20:],
+            "market_history": s.market_history[-100:],
             "cumulative_pnl": round(sum(h.get("resolved_pnl", 0) for h in s.market_history), 2),
             "auto_mode": s._auto_mode,
-            "signal": s.signal_tracker.current() if s.signal_tracker else {
-                "state": "NEUTRAL", "up_mid": 0, "dn_mid": 0,
-                "spread_pct": 0, "confidence": 0, "checks": 0, "signals_fired": 0,
-            },
+            "signal": signal_state,
             "signal_state": s._signal_state if hasattr(s, '_signal_state') else "NEUTRAL",
             "current_phase": (s._current_phase + 1) if hasattr(s, '_current_phase') else 0,
-            "phase_role": "IZLE" if hasattr(s, '_current_phase') and s._current_phase in {0,1} else "BEKLE" if hasattr(s, '_current_phase') and s._current_phase in {8,9} else "AL",
-            "btc_change_pct": round((s.btc_feed.current_price - s._start_btc_price) / s._start_btc_price * 100, 4) if s.btc_feed and hasattr(s, '_start_btc_price') and s._start_btc_price > 0 else 0,
-            "btc_direction": round(s.btc_feed.direction, 3) if s.btc_feed else 0,
-            "btc_ptb": s._start_btc_price if hasattr(s, '_start_btc_price') else 0,
-            "btc_current": s.btc_feed.current_price if s.btc_feed else 0,
-            "vol_label": "LOW" if s.btc_feed and abs(s.btc_feed.change_pct) < 0.05 else "HIGH" if s.btc_feed and abs(s.btc_feed.change_pct) > 0.15 else "MID",
+            "phase_role": s._strategy_state if hasattr(s, '_strategy_state') else "IZLE",
+            "active_direction": s._active_direction if hasattr(s, '_active_direction') else None,
+            "direction_changes": s._direction_changes if hasattr(s, '_direction_changes') else 0,
+            "ai_agent": s.ai_agent.stats if hasattr(s, 'ai_agent') else {"enabled": False},
+            "ai_action": s._ai_last_action if hasattr(s, '_ai_last_action') else "HOLD",
+            "ai_reasoning": s._ai_reasoning if hasattr(s, '_ai_reasoning') else "",
+            "btc_change_pct": 0,
+            "btc_direction": 0,
+            "btc_ptb": 0,
+            "btc_current": 0,
+            "vol_label": vol_label,
             "izle_signal": s._izle_signal if hasattr(s, '_izle_signal') else "NEUTRAL",
             "izle_avg": round(s._izle_avg, 4) if hasattr(s, '_izle_avg') else 0,
             "izle_samples": len(s._izle_samples) if hasattr(s, '_izle_samples') else 0,
         }
 
+    async def _handle_login(self, request):
+        """POST /login — sifre dogrulama."""
+        try:
+            data = await request.json()
+            password = data.get("password", "")
+        except Exception:
+            return web.json_response({"ok": False}, status=400)
+
+        if password == _DASH_PASSWORD:
+            resp = web.json_response({"ok": True})
+            resp.set_cookie("ps_auth", _AUTH_TOKEN, httponly=True, max_age=86400, samesite="Strict")
+            return resp
+        return web.json_response({"ok": False}, status=401)
+
     async def _ws_handler(self, request):
+        if not self._check_auth(request):
+            return web.Response(status=401, text="Unauthorized")
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         self._ws_clients.append(ws)
@@ -161,8 +202,47 @@ class DashboardServer:
                     self._ws_clients.remove(ws)
 
     async def _serve_html(self, request):
-        return web.Response(text=HTML, content_type="text/html")
+        if self._check_auth(request):
+            return web.Response(text=HTML, content_type="text/html")
+        return web.Response(text=LOGIN_HTML, content_type="text/html")
 
+
+LOGIN_HTML = r"""<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolySignal — Giris</title>
+<style>
+body{background:#080c14;color:#f1f5f9;font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+.box{background:#0f1522;border:1px solid #1c2840;border-radius:12px;padding:40px;width:320px;text-align:center}
+h1{font-size:18px;margin-bottom:24px;color:#06b6d4}
+input{width:100%;padding:10px 14px;background:#0b1018;border:1px solid #1c2840;border-radius:8px;color:#f1f5f9;font-size:14px;margin-bottom:16px;box-sizing:border-box}
+input:focus{outline:none;border-color:#06b6d4}
+button{width:100%;padding:10px;background:#10b981;border:none;border-radius:8px;color:#000;font-weight:700;font-size:14px;cursor:pointer}
+button:hover{background:#34d399}
+.err{color:#ef4444;font-size:12px;margin-top:8px;display:none}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>PolySignal</h1>
+  <form onsubmit="return doLogin(event)">
+    <input type="password" id="pw" placeholder="Sifre" autofocus>
+    <button type="submit">Giris</button>
+  </form>
+  <div id="err" class="err">Yanlis sifre</div>
+</div>
+<script>
+async function doLogin(e){
+  e.preventDefault();
+  const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('pw').value})});
+  if(r.ok){location.reload()}else{document.getElementById('err').style.display='block'}
+  return false;
+}
+</script>
+</body>
+</html>"""
 
 HTML = r"""<!DOCTYPE html>
 <html lang="tr" class="dark">
@@ -204,7 +284,7 @@ body { background: #080c14; }
 <!-- Header -->
 <header class="flex items-center justify-between px-6 py-3 bg-base-card border-b border-brd">
   <h1 class="text-base font-extrabold tracking-tight">
-    <span class="text-cyan-400">&#9670;</span> Poly<span class="text-cyan-400">Hard</span>
+    <span class="text-cyan-400">&#9670;</span> Poly<span class="text-cyan-400">Signal</span>
   </h1>
   <div class="flex items-center gap-4 text-xs text-slate-400">
     <span id="mktLabel" class="text-cyan-400 font-semibold truncate max-w-xs">Baglanmadi</span>
@@ -219,11 +299,11 @@ body { background: #080c14; }
 <!-- Metrics Bar -->
 <div class="grid grid-cols-6 border-b border-brd bg-base-card">
   <div class="flex flex-col items-center py-2.5 border-r border-brd">
-    <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">BTC Anlik</span>
+    <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">OB Mid</span>
     <span id="btcNow" class="font-mono text-sm font-bold">—</span>
   </div>
   <div class="flex flex-col items-center py-2.5 border-r border-brd">
-    <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">BASLANGIC</span>
+    <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Referans</span>
     <span id="btcPtb" class="font-mono text-sm font-bold text-amber-400">—</span>
   </div>
   <div class="flex flex-col items-center py-2.5 border-r border-brd">
@@ -301,18 +381,18 @@ body { background: #080c14; }
           <span id="sigChecks" class="text-slate-500">0</span><span class="text-[10px] text-slate-500">chk</span>
           <span id="sigRapid" class="hidden px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-[10px] font-bold">HIZLI</span>
         </div>
-        <!-- Satir 2: BTC Anlik vs BASLANGIC fiyat farki -->
+        <!-- Satir 2: Orderbook referans metrikleri -->
         <div class="flex items-center gap-3 font-mono text-xs flex-wrap border-t border-brd/50 pt-2.5">
-          <span class="text-[10px] text-slate-500 font-sans font-semibold">BTC</span>
+          <span class="text-[10px] text-slate-500 font-sans font-semibold">OB MID</span>
           <span id="sigBtcNow" class="font-bold">$0</span>
-          <span class="text-[10px] text-slate-500 font-sans font-semibold">BASLANGIC</span>
+          <span class="text-[10px] text-slate-500 font-sans font-semibold">REF</span>
           <span id="sigBtcPtb" class="font-bold text-amber-400">$0</span>
           <div class="w-px h-5 bg-brd shrink-0"></div>
           <span class="text-[10px] text-slate-500 font-sans font-semibold">FARK</span>
           <span id="sigBtcDiff" class="font-bold text-slate-400">$0</span>
           <span id="sigBtcPct" class="font-bold text-slate-400">%0</span>
           <div class="w-px h-5 bg-brd shrink-0"></div>
-          <span class="text-[10px] text-slate-500 font-sans font-semibold">YON</span>
+          <span class="text-[10px] text-slate-500 font-sans font-semibold">OB SKOR</span>
           <span id="sigBtcDir" class="font-bold text-slate-400">0</span>
           <span id="sigBtcLabel" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-700 text-slate-400">NEUTRAL</span>
         </div>
@@ -407,6 +487,8 @@ body { background: #080c14; }
             <span class="text-emerald-400 font-bold text-base" id="upSh">0</span>
             <span class="text-slate-500">&cent;<span id="upMktPrice">—</span></span>
             <span class="text-slate-400 font-semibold">$<span id="upCost">0</span></span>
+            <span class="text-slate-500 text-[10px] uppercase tracking-wider font-semibold">Ort</span>
+            <span class="text-cyan-400 font-semibold">&cent;<span id="upAvg">0</span></span>
           </div>
           <div class="w-px h-6 bg-brd mx-2 shrink-0"></div>
           <div class="flex items-baseline gap-2 flex-1 px-3 py-2 rounded-lg bg-red-500/[.06]">
@@ -414,6 +496,8 @@ body { background: #080c14; }
             <span class="text-red-400 font-bold text-base" id="dnSh">0</span>
             <span class="text-slate-500">&cent;<span id="dnMktPrice">—</span></span>
             <span class="text-slate-400 font-semibold">$<span id="dnCost">0</span></span>
+            <span class="text-slate-500 text-[10px] uppercase tracking-wider font-semibold">Ort</span>
+            <span class="text-cyan-400 font-semibold">&cent;<span id="dnAvg">0</span></span>
           </div>
           <div class="w-px h-6 bg-brd mx-2 shrink-0"></div>
           <div class="flex items-baseline gap-2 px-3 py-2 text-cyan-400 font-bold shrink-0">
@@ -426,7 +510,6 @@ body { background: #080c14; }
           <span id="upRev"></span><span id="dnRev"></span>
           <span id="upBought"></span><span id="upSold"></span>
           <span id="dnBought"></span><span id="dnSold"></span>
-          <span id="upAvg"></span><span id="dnAvg"></span>
           <span id="upCurVal"></span><span id="dnCurVal"></span>
           <span id="upMaxPay"></span><span id="dnMaxPay"></span>
           <span id="totalValPos"></span>
@@ -528,7 +611,7 @@ function render(d){
   $('upBought').textContent=(d.up_bought||0).toFixed(0);$('upSold').textContent=(d.up_sold||0).toFixed(0);
   $('dnBought').textContent=(d.down_bought||0).toFixed(0);$('dnSold').textContent=(d.down_sold||0).toFixed(0);
 
-  // BTC + Timer
+  // Referans + Timer
   const btc=d.btc_price;
   $('btcNow').textContent=btc&&btc.current?'$'+btc.current.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   $('btcPtb').textContent=btc&&btc.price_to_beat?'$'+btc.price_to_beat.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
@@ -582,7 +665,7 @@ function render(d){
   ve.textContent=vl;
   ve.style.color=vl==='LOW'?'#10b981':vl==='HIGH'?'#ef4444':'#94a3b8';
 
-  // BTC fiyat farki
+  // Referans farki / orderbook skoru
   const btcC=d.btc_current||0,btcP=d.btc_ptb||0;
   const btcDiff=btcC-btcP;const btcPct=d.btc_change_pct||0;const btcDir=d.btc_direction||0;
   $('sigBtcNow').textContent=btcC>0?'$'+btcC.toLocaleString('en-US',{maximumFractionDigits:2}):'—';

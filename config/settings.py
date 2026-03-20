@@ -1,5 +1,7 @@
 """Bot configuration and settings."""
 
+__version__ = "2.0.0"
+
 import os
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
@@ -72,6 +74,8 @@ class RiskConfig:
 class BotConfig:
     """Top-level bot configuration."""
     test_mode: bool = os.getenv("TEST_MODE", "true").lower() == "true"
+    dashboard_host: str = os.getenv("DASHBOARD_HOST", "0.0.0.0")
+    dashboard_port: int = int(os.getenv("DASHBOARD_PORT", "18998"))
     polymarket: PolymarketConfig = field(default_factory=PolymarketConfig)
     quoting: QuotingConfig = field(default_factory=QuotingConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)

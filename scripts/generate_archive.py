@@ -200,7 +200,7 @@ tbody td:nth-child(3) {{ color: var(--t2); }}
 <body>
 
 <div class="header">
-  <h1><em>&#9670;</em> Poly<em>Hard</em> — Arsiv</h1>
+  <h1><em>&#9670;</em> Poly<em>Signal</em> — Arsiv</h1>
   <span class="updated">Son guncelleme: {now}</span>
 </div>
 

@@ -1,1 +1,1802 @@
-[]
+[
+  {
+    "ts": 1773953195.0106208,
+    "time": "2026-03-19 23:46:35",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.51,
+    "size": 377.6,
+    "cost": 192.576
+  },
+  {
+    "ts": 1773953196.015581,
+    "time": "2026-03-19 23:46:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.51,
+    "size": 101.2,
+    "cost": 51.612
+  },
+  {
+    "ts": 1773953197.169297,
+    "time": "2026-03-19 23:46:37",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 6.0,
+    "cost": 3.0
+  },
+  {
+    "ts": 1773953198.2947671,
+    "time": "2026-03-19 23:46:38",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 5.0,
+    "cost": 2.5
+  },
+  {
+    "ts": 1773953198.897985,
+    "time": "2026-03-19 23:46:38",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 9.2,
+    "cost": 4.58
+  },
+  {
+    "ts": 1773953201.746561,
+    "time": "2026-03-19 23:46:41",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 4.1,
+    "cost": 2.045
+  },
+  {
+    "ts": 1773953211.8348851,
+    "time": "2026-03-19 23:46:51",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 15.9,
+    "cost": 7.945
+  },
+  {
+    "ts": 1773953213.3513222,
+    "time": "2026-03-19 23:46:53",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.6,
+    "cost": 0.82
+  },
+  {
+    "ts": 1773953217.389266,
+    "time": "2026-03-19 23:46:57",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 18.9,
+    "cost": 9.465
+  },
+  {
+    "ts": 1773953218.0130692,
+    "time": "2026-03-19 23:46:58",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 10.2,
+    "cost": 5.12
+  },
+  {
+    "ts": 1773953225.081812,
+    "time": "2026-03-19 23:47:05",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.51,
+    "size": 98.0,
+    "cost": 49.98
+  },
+  {
+    "ts": 1773953226.087774,
+    "time": "2026-03-19 23:47:06",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.52,
+    "size": 72.1,
+    "cost": 37.492
+  },
+  {
+    "ts": 1773953227.092763,
+    "time": "2026-03-19 23:47:07",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.52,
+    "size": 69.2,
+    "cost": 35.984
+  },
+  {
+    "ts": 1773953228.097684,
+    "time": "2026-03-19 23:47:08",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.52,
+    "size": 69.2,
+    "cost": 35.984
+  },
+  {
+    "ts": 1773953229.103112,
+    "time": "2026-03-19 23:47:09",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.52,
+    "size": 69.2,
+    "cost": 35.984
+  },
+  {
+    "ts": 1773953234.064681,
+    "time": "2026-03-19 23:47:14",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 0.7,
+    "cost": 0.33
+  },
+  {
+    "ts": 1773953234.068515,
+    "time": "2026-03-19 23:47:14",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 10.3,
+    "cost": 5.17
+  },
+  {
+    "ts": 1773953234.431784,
+    "time": "2026-03-19 23:47:14",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 16.0,
+    "cost": 8.0
+  },
+  {
+    "ts": 1773953236.897633,
+    "time": "2026-03-19 23:47:16",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 9.2,
+    "cost": 4.605
+  },
+  {
+    "ts": 1773953237.6239429,
+    "time": "2026-03-19 23:47:17",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 9.2,
+    "cost": 4.605
+  },
+  {
+    "ts": 1773953237.958509,
+    "time": "2026-03-19 23:47:17",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.5,
+    "cost": 0.735
+  },
+  {
+    "ts": 1773953239.562475,
+    "time": "2026-03-19 23:47:19",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 32.2,
+    "cost": 16.085
+  },
+  {
+    "ts": 1773953239.565293,
+    "time": "2026-03-19 23:47:19",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 77.0,
+    "cost": 38.5
+  },
+  {
+    "ts": 1773953239.568515,
+    "time": "2026-03-19 23:47:19",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 55.1,
+    "cost": 27.545
+  },
+  {
+    "ts": 1773953239.923723,
+    "time": "2026-03-19 23:47:19",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 2.2,
+    "cost": 1.08
+  },
+  {
+    "ts": 1773953239.971263,
+    "time": "2026-03-19 23:47:19",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 5.0,
+    "cost": 2.5
+  },
+  {
+    "ts": 1773953241.11745,
+    "time": "2026-03-19 23:47:21",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.55,
+    "size": 712.2,
+    "cost": 391.71
+  },
+  {
+    "ts": 1773953241.4147441,
+    "time": "2026-03-19 23:47:21",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.9,
+    "cost": 0.965
+  },
+  {
+    "ts": 1773953241.54361,
+    "time": "2026-03-19 23:47:21",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.5,
+    "cost": 0.765
+  },
+  {
+    "ts": 1773953241.922873,
+    "time": "2026-03-19 23:47:21",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 2.2,
+    "cost": 1.115
+  },
+  {
+    "ts": 1773953242.1227672,
+    "time": "2026-03-19 23:47:22",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.55,
+    "size": 248.0,
+    "cost": 136.4
+  },
+  {
+    "ts": 1773953243.856012,
+    "time": "2026-03-19 23:47:23",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.9,
+    "cost": 0.945
+  },
+  {
+    "ts": 1773953250.486905,
+    "time": "2026-03-19 23:47:30",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.5,
+    "cost": 0.765
+  },
+  {
+    "ts": 1773953251.0386271,
+    "time": "2026-03-19 23:47:31",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.5,
+    "cost": 0.765
+  },
+  {
+    "ts": 1773953254.056747,
+    "time": "2026-03-19 23:47:34",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 4.1,
+    "cost": 2.055
+  },
+  {
+    "ts": 1773953254.059797,
+    "time": "2026-03-19 23:47:34",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 36.9,
+    "cost": 18.445
+  },
+  {
+    "ts": 1773953255.1396182,
+    "time": "2026-03-19 23:47:35",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.55,
+    "size": 355.6,
+    "cost": 195.58
+  },
+  {
+    "ts": 1773953255.357434,
+    "time": "2026-03-19 23:47:35",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 7.3,
+    "cost": 3.64
+  },
+  {
+    "ts": 1773953255.538906,
+    "time": "2026-03-19 23:47:35",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 0.2,
+    "cost": 0.12
+  },
+  {
+    "ts": 1773953256.10631,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 6.0,
+    "cost": 3.0
+  },
+  {
+    "ts": 1773953256.1431732,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.6,
+    "size": 100.7,
+    "cost": 60.42
+  },
+  {
+    "ts": 1773953256.167414,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 11.0,
+    "cost": 5.5
+  },
+  {
+    "ts": 1773953256.197694,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 6.0,
+    "cost": 3.0
+  },
+  {
+    "ts": 1773953256.203234,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 9.6,
+    "cost": 4.795
+  },
+  {
+    "ts": 1773953256.206828,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 11.9,
+    "cost": 5.96
+  },
+  {
+    "ts": 1773953256.384702,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 6.0,
+    "cost": 3.0
+  },
+  {
+    "ts": 1773953256.408674,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 9.0,
+    "cost": 4.5
+  },
+  {
+    "ts": 1773953256.5832698,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 0.6,
+    "cost": 0.295
+  },
+  {
+    "ts": 1773953256.602983,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 0.0,
+    "cost": 0.005
+  },
+  {
+    "ts": 1773953256.663281,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.6,
+    "cost": 0.815
+  },
+  {
+    "ts": 1773953256.7146811,
+    "time": "2026-03-19 23:47:36",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 0.0,
+    "cost": 0.005
+  },
+  {
+    "ts": 1773953257.147608,
+    "time": "2026-03-19 23:47:37",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.61,
+    "size": 44.6,
+    "cost": 27.206
+  },
+  {
+    "ts": 1773953257.4021509,
+    "time": "2026-03-19 23:47:37",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 47.8,
+    "cost": 23.92
+  },
+  {
+    "ts": 1773953257.404949,
+    "time": "2026-03-19 23:47:37",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 30.5,
+    "cost": 15.275
+  },
+  {
+    "ts": 1773953258.1526778,
+    "time": "2026-03-19 23:47:38",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.61,
+    "size": 84.7,
+    "cost": 51.667
+  },
+  {
+    "ts": 1773953259.1577768,
+    "time": "2026-03-19 23:47:39",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.62,
+    "size": 18.8,
+    "cost": 11.656
+  },
+  {
+    "ts": 1773953261.646775,
+    "time": "2026-03-19 23:47:41",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.6,
+    "cost": 0.82
+  },
+  {
+    "ts": 1773953263.6388328,
+    "time": "2026-03-19 23:47:43",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 23.7,
+    "cost": 11.845
+  },
+  {
+    "ts": 1773953263.811287,
+    "time": "2026-03-19 23:47:43",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 1.9,
+    "cost": 0.945
+  },
+  {
+    "ts": 1773953264.166341,
+    "time": "2026-03-19 23:47:44",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.57,
+    "size": 18.6,
+    "cost": 10.602
+  },
+  {
+    "ts": 1773953264.627681,
+    "time": "2026-03-19 23:47:44",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.5,
+    "size": 5.0,
+    "cost": 2.505
+  },
+  {
+    "ts": 1773953265.171515,
+    "time": "2026-03-19 23:47:45",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.53,
+    "size": 11.1,
+    "cost": 5.883
+  },
+  {
+    "ts": 1773953278.1988978,
+    "time": "2026-03-19 23:47:58",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.67,
+    "size": 587.0,
+    "cost": 393.29
+  },
+  {
+    "ts": 1773953279.211195,
+    "time": "2026-03-19 23:47:59",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.7,
+    "size": 62.4,
+    "cost": 43.68
+  },
+  {
+    "ts": 1773953285.218534,
+    "time": "2026-03-19 23:48:05",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.78,
+    "size": 102.6,
+    "cost": 80.028
+  },
+  {
+    "ts": 1773953286.22431,
+    "time": "2026-03-19 23:48:06",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.79,
+    "size": 45.6,
+    "cost": 36.024
+  },
+  {
+    "ts": 1773953287.2286348,
+    "time": "2026-03-19 23:48:07",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.79,
+    "size": 10.8,
+    "cost": 8.532
+  },
+  {
+    "ts": 1773953289.2331479,
+    "time": "2026-03-19 23:48:09",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "UP",
+    "price": 0.14,
+    "size": 892.9,
+    "cost": 125.006
+  },
+  {
+    "ts": 1773953289.237678,
+    "time": "2026-03-19 23:48:09",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.88,
+    "size": 500.4,
+    "cost": 440.352
+  },
+  {
+    "ts": 1773953290.2413461,
+    "time": "2026-03-19 23:48:10",
+    "market": "Bitcoin Up or Down - March 19, 4:45PM-4:50PM ET",
+    "token": "DOWN",
+    "price": 0.89,
+    "size": 98.9,
+    "cost": 88.021
+  },
+  {
+    "ts": 1773953440.444981,
+    "time": "2026-03-19 23:50:40",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.53,
+    "size": 332.7,
+    "cost": 176.331
+  },
+  {
+    "ts": 1773953441.453231,
+    "time": "2026-03-19 23:50:41",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.53,
+    "size": 185.3,
+    "cost": 98.209
+  },
+  {
+    "ts": 1773953442.457324,
+    "time": "2026-03-19 23:50:42",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.53,
+    "size": 103.2,
+    "cost": 54.696
+  },
+  {
+    "ts": 1773953443.461977,
+    "time": "2026-03-19 23:50:43",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.53,
+    "size": 66.9,
+    "cost": 35.457
+  },
+  {
+    "ts": 1773953444.4668748,
+    "time": "2026-03-19 23:50:44",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.53,
+    "size": 63.0,
+    "cost": 33.39
+  },
+  {
+    "ts": 1773953451.4845529,
+    "time": "2026-03-19 23:50:51",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.54,
+    "size": 76.5,
+    "cost": 41.31
+  },
+  {
+    "ts": 1773953452.488466,
+    "time": "2026-03-19 23:50:52",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.55,
+    "size": 55.5,
+    "cost": 30.525
+  },
+  {
+    "ts": 1773953453.493851,
+    "time": "2026-03-19 23:50:53",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.55,
+    "size": 43.4,
+    "cost": 23.87
+  },
+  {
+    "ts": 1773953454.498088,
+    "time": "2026-03-19 23:50:54",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.55,
+    "size": 10.9,
+    "cost": 5.995
+  },
+  {
+    "ts": 1773953638.7137809,
+    "time": "2026-03-19 23:53:58",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.67,
+    "size": 1074.6,
+    "cost": 719.982
+  },
+  {
+    "ts": 1773953639.718969,
+    "time": "2026-03-19 23:53:59",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.68,
+    "size": 94.1,
+    "cost": 63.988
+  },
+  {
+    "ts": 1773953642.724333,
+    "time": "2026-03-19 23:54:02",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.47,
+    "size": 127.7,
+    "cost": 60.019
+  },
+  {
+    "ts": 1773953643.728035,
+    "time": "2026-03-19 23:54:03",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.48,
+    "size": 93.7,
+    "cost": 44.976
+  },
+  {
+    "ts": 1773953644.731128,
+    "time": "2026-03-19 23:54:04",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.47,
+    "size": 71.8,
+    "cost": 33.746
+  },
+  {
+    "ts": 1773953645.735282,
+    "time": "2026-03-19 23:54:05",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.47,
+    "size": 16.0,
+    "cost": 7.52
+  },
+  {
+    "ts": 1773953647.739465,
+    "time": "2026-03-19 23:54:07",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.56,
+    "size": 884.2,
+    "cost": 495.152
+  },
+  {
+    "ts": 1773953648.7454631,
+    "time": "2026-03-19 23:54:08",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.56,
+    "size": 84.2,
+    "cost": 47.152
+  },
+  {
+    "ts": 1773953649.748748,
+    "time": "2026-03-19 23:54:09",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.58,
+    "size": 9.6,
+    "cost": 5.568
+  },
+  {
+    "ts": 1773953679.7725298,
+    "time": "2026-03-19 23:54:39",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.76,
+    "size": 473.7,
+    "cost": 360.012
+  },
+  {
+    "ts": 1773953680.776586,
+    "time": "2026-03-19 23:54:40",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.8,
+    "size": 61.9,
+    "cost": 49.52
+  },
+  {
+    "ts": 1773953681.780751,
+    "time": "2026-03-19 23:54:41",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "UP",
+    "price": 0.83,
+    "size": 23.5,
+    "cost": 19.505
+  },
+  {
+    "ts": 1773953683.784938,
+    "time": "2026-03-19 23:54:43",
+    "market": "Bitcoin Up or Down - March 19, 4:50PM-4:55PM ET",
+    "token": "DOWN",
+    "price": 0.11,
+    "size": 1136.4,
+    "cost": 125.004
+  },
+  {
+    "ts": 1773953970.325962,
+    "time": "2026-03-19 23:59:30",
+    "market": "Bitcoin Up or Down - March 19, 4:55PM-5:00PM ET",
+    "token": "UP",
+    "price": 0.77,
+    "size": 83.1,
+    "cost": 63.987
+  },
+  {
+    "ts": 1773953971.330119,
+    "time": "2026-03-19 23:59:31",
+    "market": "Bitcoin Up or Down - March 19, 4:55PM-5:00PM ET",
+    "token": "UP",
+    "price": 0.77,
+    "size": 24.9,
+    "cost": 19.173
+  },
+  {
+    "ts": 1773953972.334351,
+    "time": "2026-03-19 23:59:32",
+    "market": "Bitcoin Up or Down - March 19, 4:55PM-5:00PM ET",
+    "token": "UP",
+    "price": 0.68,
+    "size": 22.6,
+    "cost": 15.368
+  },
+  {
+    "ts": 1773954606.342627,
+    "time": "2026-03-20 00:10:06",
+    "market": "Bitcoin Up or Down - March 19, 5:10PM-5:15PM ET",
+    "token": "DOWN",
+    "price": 0.51,
+    "size": 78.4,
+    "cost": 39.984
+  },
+  {
+    "ts": 1773954607.345973,
+    "time": "2026-03-20 00:10:07",
+    "market": "Bitcoin Up or Down - March 19, 5:10PM-5:15PM ET",
+    "token": "DOWN",
+    "price": 0.51,
+    "size": 58.8,
+    "cost": 29.988
+  },
+  {
+    "ts": 1773954608.347884,
+    "time": "2026-03-20 00:10:08",
+    "market": "Bitcoin Up or Down - March 19, 5:10PM-5:15PM ET",
+    "token": "DOWN",
+    "price": 0.49,
+    "size": 45.9,
+    "cost": 22.491
+  },
+  {
+    "ts": 1773954609.3501198,
+    "time": "2026-03-20 00:10:09",
+    "market": "Bitcoin Up or Down - March 19, 5:10PM-5:15PM ET",
+    "token": "DOWN",
+    "price": 0.48,
+    "size": 46.7,
+    "cost": 22.416
+  },
+  {
+    "ts": 1773954610.353441,
+    "time": "2026-03-20 00:10:10",
+    "market": "Bitcoin Up or Down - March 19, 5:10PM-5:15PM ET",
+    "token": "DOWN",
+    "price": 0.55,
+    "size": 368.8,
+    "cost": 202.84
+  },
+  {
+    "ts": 1773954611.3571599,
+    "time": "2026-03-20 00:10:11",
+    "market": "Bitcoin Up or Down - March 19, 5:10PM-5:15PM ET",
+    "token": "DOWN",
+    "price": 0.55,
+    "size": 226.6,
+    "cost": 124.63
+  },
+  {
+    "ts": 1773954612.361392,
+    "time": "2026-03-20 00:10:12",
+    "market": "Bitcoin Up or Down - March 19, 5:10PM-5:15PM ET",
+    "token": "DOWN",
+    "price": 0.54,
+    "size": 77.2,
+    "cost": 41.688
+  },
+  {
+    "ts": 1773954664.607609,
+    "time": "2026-03-20 00:11:04",
+    "market": "Bitcoin Up or Down - March 19, 5:10PM-5:15PM ET",
+    "token": "DOWN",
+    "price": 0.54,
+    "size": 15.4,
+    "cost": 8.316
+  },
+  {
+    "ts": 1773996264.730382,
+    "time": "2026-03-20 11:44:24",
+    "market": "Bitcoin Up or Down - March 20, 4:40AM-4:45AM ET",
+    "token": "DOWN",
+    "price": 0.82,
+    "size": 390.2,
+    "cost": 319.964
+  },
+  {
+    "ts": 1773996265.735797,
+    "time": "2026-03-20 11:44:25",
+    "market": "Bitcoin Up or Down - March 20, 4:40AM-4:45AM ET",
+    "token": "DOWN",
+    "price": 0.83,
+    "size": 115.7,
+    "cost": 96.031
+  },
+  {
+    "ts": 1773996266.7403882,
+    "time": "2026-03-20 11:44:26",
+    "market": "Bitcoin Up or Down - March 20, 4:40AM-4:45AM ET",
+    "token": "DOWN",
+    "price": 0.85,
+    "size": 90.4,
+    "cost": 76.84
+  },
+  {
+    "ts": 1773996274.746242,
+    "time": "2026-03-20 11:44:34",
+    "market": "Bitcoin Up or Down - March 20, 4:40AM-4:45AM ET",
+    "token": "UP",
+    "price": 0.15,
+    "size": 1666.7,
+    "cost": 250.005
+  },
+  {
+    "ts": 1773996274.7502122,
+    "time": "2026-03-20 11:44:34",
+    "market": "Bitcoin Up or Down - March 20, 4:40AM-4:45AM ET",
+    "token": "DOWN",
+    "price": 0.87,
+    "size": 65.7,
+    "cost": 57.159
+  },
+  {
+    "ts": 1773996309.438935,
+    "time": "2026-03-20 11:45:09",
+    "market": "Bitcoin Up or Down - March 20, 4:45AM-4:50AM ET",
+    "token": "DOWN",
+    "price": 0.62,
+    "size": 516.1,
+    "cost": 319.982
+  },
+  {
+    "ts": 1773996310.442145,
+    "time": "2026-03-20 11:45:10",
+    "market": "Bitcoin Up or Down - March 20, 4:45AM-4:50AM ET",
+    "token": "DOWN",
+    "price": 0.62,
+    "size": 154.8,
+    "cost": 95.976
+  },
+  {
+    "ts": 1773996617.394482,
+    "time": "2026-03-20 11:50:17",
+    "market": "Bitcoin Up or Down - March 20, 4:50AM-4:55AM ET",
+    "token": "UP",
+    "price": 0.57,
+    "size": 559.9,
+    "cost": 319.143
+  },
+  {
+    "ts": 1773996821.5671701,
+    "time": "2026-03-20 11:53:41",
+    "market": "Bitcoin Up or Down - March 20, 4:50AM-4:55AM ET",
+    "token": "DOWN",
+    "price": 0.71,
+    "size": 101.4,
+    "cost": 71.994
+  },
+  {
+    "ts": 1773996822.57323,
+    "time": "2026-03-20 11:53:42",
+    "market": "Bitcoin Up or Down - March 20, 4:50AM-4:55AM ET",
+    "token": "DOWN",
+    "price": 0.71,
+    "size": 24.8,
+    "cost": 17.608
+  },
+  {
+    "ts": 1773996823.57864,
+    "time": "2026-03-20 11:53:43",
+    "market": "Bitcoin Up or Down - March 20, 4:50AM-4:55AM ET",
+    "token": "DOWN",
+    "price": 0.7,
+    "size": 10.1,
+    "cost": 7.07
+  },
+  {
+    "ts": 1773996852.652611,
+    "time": "2026-03-20 11:54:12",
+    "market": "Bitcoin Up or Down - March 20, 4:50AM-4:55AM ET",
+    "token": "UP",
+    "price": 0.15,
+    "size": 333.3,
+    "cost": 49.995
+  },
+  {
+    "ts": 1773996852.66118,
+    "time": "2026-03-20 11:54:12",
+    "market": "Bitcoin Up or Down - March 20, 4:50AM-4:55AM ET",
+    "token": "DOWN",
+    "price": 0.86,
+    "size": 115.1,
+    "cost": 98.986
+  },
+  {
+    "ts": 1773996853.667614,
+    "time": "2026-03-20 11:54:13",
+    "market": "Bitcoin Up or Down - March 20, 4:50AM-4:55AM ET",
+    "token": "DOWN",
+    "price": 0.82,
+    "size": 13.4,
+    "cost": 10.988
+  },
+  {
+    "ts": 1773997210.785502,
+    "time": "2026-03-20 12:00:10",
+    "market": "Bitcoin Up or Down - March 20, 5:00AM-5:05AM ET",
+    "token": "DOWN",
+    "price": 0.54,
+    "size": 560.9,
+    "cost": 302.886
+  },
+  {
+    "ts": 1773997213.833662,
+    "time": "2026-03-20 12:00:13",
+    "market": "Bitcoin Up or Down - March 20, 5:00AM-5:05AM ET",
+    "token": "DOWN",
+    "price": 0.55,
+    "size": 195.7,
+    "cost": 107.635
+  },
+  {
+    "ts": 1773997214.847748,
+    "time": "2026-03-20 12:00:14",
+    "market": "Bitcoin Up or Down - March 20, 5:00AM-5:05AM ET",
+    "token": "DOWN",
+    "price": 0.55,
+    "size": 81.7,
+    "cost": 44.935
+  },
+  {
+    "ts": 1773997215.879473,
+    "time": "2026-03-20 12:00:15",
+    "market": "Bitcoin Up or Down - March 20, 5:00AM-5:05AM ET",
+    "token": "DOWN",
+    "price": 0.55,
+    "size": 64.6,
+    "cost": 35.53
+  },
+  {
+    "ts": 1773997216.893964,
+    "time": "2026-03-20 12:00:16",
+    "market": "Bitcoin Up or Down - March 20, 5:00AM-5:05AM ET",
+    "token": "DOWN",
+    "price": 0.57,
+    "size": 14.1,
+    "cost": 8.037
+  },
+  {
+    "ts": 1773997259.228637,
+    "time": "2026-03-20 12:00:59",
+    "market": "Bitcoin Up or Down - March 20, 5:00AM-5:05AM ET",
+    "token": "UP",
+    "price": 0.15,
+    "size": 1666.7,
+    "cost": 250.005
+  },
+  {
+    "ts": 1773997259.2326589,
+    "time": "2026-03-20 12:00:59",
+    "market": "Bitcoin Up or Down - March 20, 5:00AM-5:05AM ET",
+    "token": "DOWN",
+    "price": 0.86,
+    "size": 575.6,
+    "cost": 495.016
+  },
+  {
+    "ts": 1773997260.23739,
+    "time": "2026-03-20 12:01:00",
+    "market": "Bitcoin Up or Down - March 20, 5:00AM-5:05AM ET",
+    "token": "DOWN",
+    "price": 0.89,
+    "size": 61.8,
+    "cost": 55.002
+  },
+  {
+    "ts": 1773997507.014623,
+    "time": "2026-03-20 12:05:07",
+    "market": "Bitcoin Up or Down - March 20, 5:05AM-5:10AM ET",
+    "token": "DOWN",
+    "price": 0.59,
+    "size": 460.7,
+    "cost": 271.813
+  },
+  {
+    "ts": 1773997508.019385,
+    "time": "2026-03-20 12:05:08",
+    "market": "Bitcoin Up or Down - March 20, 5:05AM-5:10AM ET",
+    "token": "DOWN",
+    "price": 0.62,
+    "size": 186.1,
+    "cost": 115.382
+  },
+  {
+    "ts": 1773997509.022551,
+    "time": "2026-03-20 12:05:09",
+    "market": "Bitcoin Up or Down - March 20, 5:05AM-5:10AM ET",
+    "token": "DOWN",
+    "price": 0.62,
+    "size": 116.7,
+    "cost": 72.354
+  },
+  {
+    "ts": 1773997510.027408,
+    "time": "2026-03-20 12:05:10",
+    "market": "Bitcoin Up or Down - March 20, 5:05AM-5:10AM ET",
+    "token": "DOWN",
+    "price": 0.62,
+    "size": 47.2,
+    "cost": 29.264
+  },
+  {
+    "ts": 1773999025.230052,
+    "time": "2026-03-20 12:30:25",
+    "market": "Bitcoin Up or Down - March 20, 5:30AM-5:35AM ET",
+    "token": "UP",
+    "price": 0.65,
+    "size": 488.3,
+    "cost": 317.395
+  },
+  {
+    "ts": 1773999028.387271,
+    "time": "2026-03-20 12:30:28",
+    "market": "Bitcoin Up or Down - March 20, 5:30AM-5:35AM ET",
+    "token": "UP",
+    "price": 0.63,
+    "size": 152.3,
+    "cost": 95.949
+  },
+  {
+    "ts": 1773999032.742087,
+    "time": "2026-03-20 12:30:32",
+    "market": "Bitcoin Up or Down - March 20, 5:30AM-5:35AM ET",
+    "token": "UP",
+    "price": 0.65,
+    "size": 66.9,
+    "cost": 43.485
+  },
+  {
+    "ts": 1773999035.34921,
+    "time": "2026-03-20 12:30:35",
+    "market": "Bitcoin Up or Down - March 20, 5:30AM-5:35AM ET",
+    "token": "UP",
+    "price": 0.65,
+    "size": 52.8,
+    "cost": 34.32
+  },
+  {
+    "ts": 1773999037.553942,
+    "time": "2026-03-20 12:30:37",
+    "market": "Bitcoin Up or Down - March 20, 5:30AM-5:35AM ET",
+    "token": "UP",
+    "price": 0.62,
+    "size": 13.0,
+    "cost": 8.06
+  },
+  {
+    "ts": 1773999110.589131,
+    "time": "2026-03-20 12:31:50",
+    "market": "Bitcoin Up or Down - March 20, 5:30AM-5:35AM ET",
+    "token": "DOWN",
+    "price": 0.14,
+    "size": 1785.7,
+    "cost": 249.998
+  },
+  {
+    "ts": 1773999110.617443,
+    "time": "2026-03-20 12:31:50",
+    "market": "Bitcoin Up or Down - March 20, 5:30AM-5:35AM ET",
+    "token": "UP",
+    "price": 0.87,
+    "size": 569.0,
+    "cost": 495.03
+  },
+  {
+    "ts": 1773999111.652698,
+    "time": "2026-03-20 12:31:51",
+    "market": "Bitcoin Up or Down - March 20, 5:30AM-5:35AM ET",
+    "token": "UP",
+    "price": 0.88,
+    "size": 62.5,
+    "cost": 55.0
+  },
+  {
+    "ts": 1774000371.5578508,
+    "time": "2026-03-20 12:52:51",
+    "market": "Bitcoin Up or Down - March 20, 5:50AM-5:55AM ET",
+    "token": "DOWN",
+    "price": 0.59,
+    "size": 579.2,
+    "cost": 341.728
+  },
+  {
+    "ts": 1774000372.581663,
+    "time": "2026-03-20 12:52:52",
+    "market": "Bitcoin Up or Down - March 20, 5:50AM-5:55AM ET",
+    "token": "DOWN",
+    "price": 0.58,
+    "size": 163.8,
+    "cost": 95.004
+  },
+  {
+    "ts": 1774000373.597995,
+    "time": "2026-03-20 12:52:53",
+    "market": "Bitcoin Up or Down - March 20, 5:50AM-5:55AM ET",
+    "token": "DOWN",
+    "price": 0.56,
+    "size": 87.8,
+    "cost": 49.168
+  },
+  {
+    "ts": 1774000374.612501,
+    "time": "2026-03-20 12:52:54",
+    "market": "Bitcoin Up or Down - March 20, 5:50AM-5:55AM ET",
+    "token": "DOWN",
+    "price": 0.56,
+    "size": 18.2,
+    "cost": 10.192
+  },
+  {
+    "ts": 1774000511.4716392,
+    "time": "2026-03-20 12:55:11",
+    "market": "Bitcoin Up or Down - March 20, 5:55AM-6:00AM ET",
+    "token": "UP",
+    "price": 0.67,
+    "size": 537.3,
+    "cost": 359.991
+  },
+  {
+    "ts": 1774000513.273045,
+    "time": "2026-03-20 12:55:13",
+    "market": "Bitcoin Up or Down - March 20, 5:55AM-6:00AM ET",
+    "token": "UP",
+    "price": 0.64,
+    "size": 154.7,
+    "cost": 99.008
+  },
+  {
+    "ts": 1774000514.942979,
+    "time": "2026-03-20 12:55:14",
+    "market": "Bitcoin Up or Down - March 20, 5:55AM-6:00AM ET",
+    "token": "UP",
+    "price": 0.65,
+    "size": 59.0,
+    "cost": 38.35
+  },
+  {
+    "ts": 1774003025.960767,
+    "time": "2026-03-20 13:37:05",
+    "market": "Bitcoin Up or Down - March 20, 6:35AM-6:40AM ET",
+    "token": "DOWN",
+    "price": 0.08,
+    "size": 625.0,
+    "cost": 50.0
+  },
+  {
+    "ts": 1774003094.168818,
+    "time": "2026-03-20 13:38:14",
+    "market": "Bitcoin Up or Down - March 20, 6:35AM-6:40AM ET",
+    "token": "DOWN",
+    "price": 0.02,
+    "size": 2500.0,
+    "cost": 50.0
+  },
+  {
+    "ts": 1774003343.487869,
+    "time": "2026-03-20 13:42:23",
+    "market": "Bitcoin Up or Down - March 20, 6:40AM-6:45AM ET",
+    "token": "UP",
+    "price": 0.64,
+    "size": 93.4,
+    "cost": 59.776
+  },
+  {
+    "ts": 1774003344.494134,
+    "time": "2026-03-20 13:42:24",
+    "market": "Bitcoin Up or Down - March 20, 6:40AM-6:45AM ET",
+    "token": "UP",
+    "price": 0.63,
+    "size": 56.8,
+    "cost": 35.784
+  },
+  {
+    "ts": 1774003355.8671548,
+    "time": "2026-03-20 13:42:35",
+    "market": "Bitcoin Up or Down - March 20, 6:40AM-6:45AM ET",
+    "token": "UP",
+    "price": 0.57,
+    "size": 100.0,
+    "cost": 57.0
+  },
+  {
+    "ts": 1774003356.870347,
+    "time": "2026-03-20 13:42:36",
+    "market": "Bitcoin Up or Down - March 20, 6:40AM-6:45AM ET",
+    "token": "UP",
+    "price": 0.57,
+    "size": 44.4,
+    "cost": 25.308
+  },
+  {
+    "ts": 1774003357.877054,
+    "time": "2026-03-20 13:42:37",
+    "market": "Bitcoin Up or Down - March 20, 6:40AM-6:45AM ET",
+    "token": "UP",
+    "price": 0.57,
+    "size": 29.5,
+    "cost": 16.815
+  },
+  {
+    "ts": 1774003853.554931,
+    "time": "2026-03-20 13:50:53",
+    "market": "Bitcoin Up or Down - March 20, 6:50AM-6:55AM ET",
+    "token": "UP",
+    "price": 0.55,
+    "size": 137.5,
+    "cost": 75.625
+  },
+  {
+    "ts": 1774003854.561149,
+    "time": "2026-03-20 13:50:54",
+    "market": "Bitcoin Up or Down - March 20, 6:50AM-6:55AM ET",
+    "token": "UP",
+    "price": 0.55,
+    "size": 25.1,
+    "cost": 13.805
+  },
+  {
+    "ts": 1774003855.5675478,
+    "time": "2026-03-20 13:50:55",
+    "market": "Bitcoin Up or Down - March 20, 6:50AM-6:55AM ET",
+    "token": "UP",
+    "price": 0.55,
+    "size": 17.3,
+    "cost": 9.515
+  },
+  {
+    "ts": 1774003884.448676,
+    "time": "2026-03-20 13:51:24",
+    "market": "Bitcoin Up or Down - March 20, 6:50AM-6:55AM ET",
+    "token": "DOWN",
+    "price": 0.49,
+    "size": 16.3,
+    "cost": 7.987
+  },
+  {
+    "ts": 1774003982.49589,
+    "time": "2026-03-20 13:53:02",
+    "market": "Bitcoin Up or Down - March 20, 6:50AM-6:55AM ET",
+    "token": "DOWN",
+    "price": 0.12,
+    "size": 416.7,
+    "cost": 50.004
+  },
+  {
+    "ts": 1774038395.855459,
+    "time": "2026-03-20 23:26:35",
+    "market": "Bitcoin Up or Down - March 20, 4:25PM-4:30PM ET",
+    "token": "DOWN",
+    "price": 0.59,
+    "size": 92.6,
+    "cost": 54.634
+  },
+  {
+    "ts": 1774038396.8591769,
+    "time": "2026-03-20 23:26:36",
+    "market": "Bitcoin Up or Down - March 20, 4:25PM-4:30PM ET",
+    "token": "DOWN",
+    "price": 0.59,
+    "size": 59.2,
+    "cost": 34.928
+  },
+  {
+    "ts": 1774038397.863489,
+    "time": "2026-03-20 23:26:37",
+    "market": "Bitcoin Up or Down - March 20, 4:25PM-4:30PM ET",
+    "token": "DOWN",
+    "price": 0.59,
+    "size": 9.6,
+    "cost": 5.664
+  },
+  {
+    "ts": 1774038430.901185,
+    "time": "2026-03-20 23:27:10",
+    "market": "Bitcoin Up or Down - March 20, 4:25PM-4:30PM ET",
+    "token": "UP",
+    "price": 0.15,
+    "size": 333.3,
+    "cost": 49.995
+  },
+  {
+    "ts": 1774038430.90498,
+    "time": "2026-03-20 23:27:10",
+    "market": "Bitcoin Up or Down - March 20, 4:25PM-4:30PM ET",
+    "token": "DOWN",
+    "price": 0.86,
+    "size": 115.1,
+    "cost": 98.986
+  },
+  {
+    "ts": 1774038431.9091358,
+    "time": "2026-03-20 23:27:11",
+    "market": "Bitcoin Up or Down - March 20, 4:25PM-4:30PM ET",
+    "token": "DOWN",
+    "price": 0.86,
+    "size": 12.8,
+    "cost": 11.008
+  },
+  {
+    "ts": 1774038905.101782,
+    "time": "2026-03-20 23:35:05",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "UP",
+    "price": 0.6,
+    "size": 101.9,
+    "cost": 61.14
+  },
+  {
+    "ts": 1774038906.10714,
+    "time": "2026-03-20 23:35:06",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "UP",
+    "price": 0.6,
+    "size": 62.7,
+    "cost": 37.62
+  },
+  {
+    "ts": 1774038920.1229901,
+    "time": "2026-03-20 23:35:20",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.57,
+    "size": 107.4,
+    "cost": 61.218
+  },
+  {
+    "ts": 1774038922.301688,
+    "time": "2026-03-20 23:35:22",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.57,
+    "size": 8.0,
+    "cost": 4.5771
+  },
+  {
+    "ts": 1774038927.5799801,
+    "time": "2026-03-20 23:35:27",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.69,
+    "size": 9.6,
+    "cost": 6.624
+  },
+  {
+    "ts": 1774038931.1459231,
+    "time": "2026-03-20 23:35:31",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.72,
+    "size": 100.0,
+    "cost": 72.0
+  },
+  {
+    "ts": 1774038932.151134,
+    "time": "2026-03-20 23:35:32",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.68,
+    "size": 29.1,
+    "cost": 19.788
+  },
+  {
+    "ts": 1774038932.595317,
+    "time": "2026-03-20 23:35:32",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.7,
+    "size": 5.0,
+    "cost": 3.5
+  },
+  {
+    "ts": 1774038933.505016,
+    "time": "2026-03-20 23:35:33",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.7,
+    "size": 2.1,
+    "cost": 1.498
+  },
+  {
+    "ts": 1774038933.884494,
+    "time": "2026-03-20 23:35:33",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.7,
+    "size": 0.4,
+    "cost": 0.252
+  },
+  {
+    "ts": 1774038933.888764,
+    "time": "2026-03-20 23:35:33",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.69,
+    "size": 4.9,
+    "cost": 3.4086
+  },
+  {
+    "ts": 1774038934.946848,
+    "time": "2026-03-20 23:35:34",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.69,
+    "size": 2.1,
+    "cost": 1.4766
+  },
+  {
+    "ts": 1774038937.980156,
+    "time": "2026-03-20 23:35:37",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.69,
+    "size": 0.5,
+    "cost": 0.3588
+  },
+  {
+    "ts": 1774038937.98354,
+    "time": "2026-03-20 23:35:37",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.68,
+    "size": 7.7,
+    "cost": 5.2496
+  },
+  {
+    "ts": 1774038938.386168,
+    "time": "2026-03-20 23:35:38",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.68,
+    "size": 2.0,
+    "cost": 1.3464
+  },
+  {
+    "ts": 1774038938.390677,
+    "time": "2026-03-20 23:35:38",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.68,
+    "size": 3.7,
+    "cost": 2.4956
+  },
+  {
+    "ts": 1774038939.722519,
+    "time": "2026-03-20 23:35:39",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.68,
+    "size": 2.1,
+    "cost": 1.4552
+  },
+  {
+    "ts": 1774038941.556622,
+    "time": "2026-03-20 23:35:41",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.68,
+    "size": 1.9,
+    "cost": 1.2852
+  },
+  {
+    "ts": 1774038941.560988,
+    "time": "2026-03-20 23:35:41",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.67,
+    "size": 9.8,
+    "cost": 6.566
+  },
+  {
+    "ts": 1774038941.564495,
+    "time": "2026-03-20 23:35:41",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.67,
+    "size": 7.9,
+    "cost": 5.293
+  },
+  {
+    "ts": 1774038941.567397,
+    "time": "2026-03-20 23:35:41",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.66,
+    "size": 1.8,
+    "cost": 1.1946
+  },
+  {
+    "ts": 1774038943.155232,
+    "time": "2026-03-20 23:35:43",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.66,
+    "size": 2.0,
+    "cost": 1.2936
+  },
+  {
+    "ts": 1774038943.522593,
+    "time": "2026-03-20 23:35:43",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.66,
+    "size": 5.0,
+    "cost": 3.3
+  },
+  {
+    "ts": 1774038946.344092,
+    "time": "2026-03-20 23:35:46",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.66,
+    "size": 1.2,
+    "cost": 0.8118
+  },
+  {
+    "ts": 1774038946.3471859,
+    "time": "2026-03-20 23:35:46",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.66,
+    "size": 8.0,
+    "cost": 5.28
+  },
+  {
+    "ts": 1774038949.240593,
+    "time": "2026-03-20 23:35:49",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.65,
+    "size": 10.1,
+    "cost": 6.565
+  },
+  {
+    "ts": 1774038949.2447748,
+    "time": "2026-03-20 23:35:49",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.61,
+    "size": 10.8,
+    "cost": 6.588
+  },
+  {
+    "ts": 1774038951.0506282,
+    "time": "2026-03-20 23:35:51",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.6,
+    "size": 5.0,
+    "cost": 3.0
+  },
+  {
+    "ts": 1774038953.525413,
+    "time": "2026-03-20 23:35:53",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.6,
+    "size": 6.0,
+    "cost": 3.6
+  },
+  {
+    "ts": 1774038953.530166,
+    "time": "2026-03-20 23:35:53",
+    "market": "Bitcoin Up or Down - March 20, 4:35PM-4:40PM ET",
+    "token": "DOWN",
+    "price": 0.59,
+    "size": 11.2,
+    "cost": 6.608
+  },
+  {
+    "ts": 1774039211.094762,
+    "time": "2026-03-20 23:40:11",
+    "market": "Bitcoin Up or Down - March 20, 4:40PM-4:45PM ET",
+    "token": "DOWN",
+    "price": 0.57,
+    "size": 102.1,
+    "cost": 58.197
+  },
+  {
+    "ts": 1774039212.113821,
+    "time": "2026-03-20 23:40:12",
+    "market": "Bitcoin Up or Down - March 20, 4:40PM-4:45PM ET",
+    "token": "DOWN",
+    "price": 0.57,
+    "size": 63.6,
+    "cost": 36.252
+  },
+  {
+    "ts": 1774039237.1357,
+    "time": "2026-03-20 23:40:37",
+    "market": "Bitcoin Up or Down - March 20, 4:40PM-4:45PM ET",
+    "token": "UP",
+    "price": 0.52,
+    "size": 242.6,
+    "cost": 126.152
+  },
+  {
+    "ts": 1774039238.1405382,
+    "time": "2026-03-20 23:40:38",
+    "market": "Bitcoin Up or Down - March 20, 4:40PM-4:45PM ET",
+    "token": "UP",
+    "price": 0.52,
+    "size": 47.7,
+    "cost": 24.804
+  },
+  {
+    "ts": 1774039241.145926,
+    "time": "2026-03-20 23:40:41",
+    "market": "Bitcoin Up or Down - March 20, 4:40PM-4:45PM ET",
+    "token": "UP",
+    "price": 0.55,
+    "size": 16.4,
+    "cost": 9.02
+  },
+  {
+    "ts": 1774039264.1767879,
+    "time": "2026-03-20 23:41:04",
+    "market": "Bitcoin Up or Down - March 20, 4:40PM-4:45PM ET",
+    "token": "UP",
+    "price": 0.67,
+    "size": 13.4,
+    "cost": 8.978
+  },
+  {
+    "ts": 1774039274.225705,
+    "time": "2026-03-20 23:41:14",
+    "market": "Bitcoin Up or Down - March 20, 4:40PM-4:45PM ET",
+    "token": "DOWN",
+    "price": 0.15,
+    "size": 333.3,
+    "cost": 49.995
+  },
+  {
+    "ts": 1774039274.229198,
+    "time": "2026-03-20 23:41:14",
+    "market": "Bitcoin Up or Down - March 20, 4:40PM-4:45PM ET",
+    "token": "UP",
+    "price": 0.88,
+    "size": 103.3,
+    "cost": 90.904
+  }
+]

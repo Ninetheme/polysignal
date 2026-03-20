@@ -29,6 +29,11 @@ PHASE_DURATION = 30.0        # 30 saniye = 1 faz
 NUM_PHASES = 10              # 10 faz = 300 saniye
 CONFIRMATION_COUNT = 3       # 3 ardisik onay
 COOLDOWN_SEC = 2.0
+DEPTH_LEVELS = 5
+EDGE_SCORE_THRESHOLD = 0.045
+EDGE_SCORE_STRONG = 0.12
+TREND_WINDOW = 8             # ~1.6s trend penceresi
+RAW_HISTORY_WINDOW = 12      # ~2.4s persistence/noise penceresi
 
 # Risk hedge
 HEDGE_PRICE_THRESHOLD = 0.20  # ¢20 altina dusunce ucuz hedge al
@@ -57,6 +62,14 @@ class SignalSnapshot:
     confidence: float
     phase: int
     rapid_move: bool = False
+    up_ref_move: float = 0.0
+    dn_ref_move: float = 0.0
+    ref_edge: float = 0.0
+    pressure_bias: float = 0.0
+    trend_bias: float = 0.0
+    edge_score: float = 0.0
+    persistence: float = 0.0
+    flip_risk: float = 0.0
 
 
 @dataclass
@@ -90,6 +103,9 @@ class SignalTracker:
 
         # Fiyat gecmisi (hizli hareket tespiti icin)
         self._price_history: list[tuple[float, float]] = []  # [(up_mid, dn_mid), ...]
+        self._raw_history: list[str] = []
+        self._ref_up_mid: float = 0.0
+        self._ref_dn_mid: float = 0.0
 
         # Callbacks
         self._on_signal: Optional[Callable] = None
@@ -113,6 +129,55 @@ class SignalTracker:
         self._market_start_ts = time.time()
         self.current_phase = 0
         self._phase_signals = []
+        self._price_history = []
+        self._raw_history = []
+        self._ref_up_mid = 0.0
+        self._ref_dn_mid = 0.0
+        self.state = SignalState.NEUTRAL
+        self._prev_state = SignalState.NEUTRAL
+        self._confirmation_count = 0
+        self._last_change_ts = 0.0
+
+    def _book_pressure(self, book) -> float:
+        bid_depth = sum(level.size for level in book.bids[:DEPTH_LEVELS]) if book and book.bids else 0.0
+        ask_depth = sum(level.size for level in book.asks[:DEPTH_LEVELS]) if book and book.asks else 0.0
+        total = bid_depth + ask_depth
+        if total <= 0:
+            return 0.0
+        return (bid_depth - ask_depth) / total
+
+    def _direction_persistence(self, candidate: str) -> float:
+        window = (self._raw_history + [candidate])[-RAW_HISTORY_WINDOW:]
+        directional = [state for state in window if state != SignalState.NEUTRAL]
+        if not directional or candidate == SignalState.NEUTRAL:
+            return 0.0
+        return sum(1 for state in directional if state == candidate) / len(directional)
+
+    def _flip_risk(self, candidate: str) -> float:
+        window = (self._raw_history + [candidate])[-RAW_HISTORY_WINDOW:]
+        directional = [state for state in window if state != SignalState.NEUTRAL]
+        if len(directional) < 2:
+            return 0.0
+        flips = sum(1 for i in range(1, len(directional)) if directional[i] != directional[i - 1])
+        return flips / (len(directional) - 1)
+
+    def _required_confirmations(self, raw: str, confidence: float, rapid_move: bool, persistence: float) -> int:
+        if raw == SignalState.NEUTRAL:
+            return max(1, CONFIRMATION_COUNT - 1)
+        if rapid_move and confidence >= 0.85 and persistence >= 0.70:
+            return 1
+        if confidence >= 0.65 and persistence >= 0.55:
+            return 2
+        return CONFIRMATION_COUNT
+
+    def _cooldown_sec(self, raw: str, confidence: float, rapid_move: bool, persistence: float) -> float:
+        if raw == SignalState.NEUTRAL:
+            return max(0.5, COOLDOWN_SEC * 0.5)
+        if rapid_move and confidence >= 0.85 and persistence >= 0.70:
+            return 0.75
+        if confidence >= 0.65:
+            return 1.0
+        return COOLDOWN_SEC
 
     def on_signal(self, callback: Callable):
         """fn(state, snapshot)"""
@@ -163,6 +228,10 @@ class SignalTracker:
         if not up_mid or not dn_mid or up_mid <= 0 or dn_mid <= 0:
             return
 
+        if self._ref_up_mid <= 0 or self._ref_dn_mid <= 0:
+            self._ref_up_mid = up_mid
+            self._ref_dn_mid = dn_mid
+
         self.checks += 1
         now = time.time()
 
@@ -178,6 +247,10 @@ class SignalTracker:
         # ── Makas hesabi ──
         min_price = min(up_mid, dn_mid)
         spread_pct = abs(up_mid - dn_mid) / min_price * 100 if min_price > 0 else 0
+        up_ref_move = up_mid - self._ref_up_mid
+        dn_ref_move = dn_mid - self._ref_dn_mid
+        ref_edge = up_ref_move - dn_ref_move
+        pressure_bias = (self._book_pressure(up_book) - self._book_pressure(dn_book)) / 2.0
 
         # ── Hizli hareket tespiti ──
         self._price_history.append((up_mid, dn_mid))
@@ -185,23 +258,54 @@ class SignalTracker:
             self._price_history = self._price_history[-50:]
 
         rapid_move = False
+        trend_bias = 0.0
         if len(self._price_history) >= RAPID_WINDOW:
             old_up, old_dn = self._price_history[-RAPID_WINDOW]
             up_move = abs(up_mid - old_up) * 100  # cent cinsinden
             dn_move = abs(dn_mid - old_dn) * 100
             if up_move >= RAPID_MOVE_CENTS or dn_move >= RAPID_MOVE_CENTS:
                 rapid_move = True
+        if len(self._price_history) >= TREND_WINDOW:
+            old_up, old_dn = self._price_history[-TREND_WINDOW]
+            trend_bias = (up_mid - old_up) - (dn_mid - old_dn)
+
+        mid_edge = up_mid - dn_mid
+        edge_score = (
+            (mid_edge * 0.45)
+            + (ref_edge * 0.30)
+            + (trend_bias * 0.15)
+            + (pressure_bias * 0.10)
+        )
+        if abs(ref_edge) >= EDGE_SCORE_STRONG or abs(trend_bias) >= 0.05:
+            rapid_move = True
+
+        provisional_raw = SignalState.NEUTRAL
+        if edge_score >= EDGE_SCORE_THRESHOLD:
+            provisional_raw = SignalState.STRONG_UP
+        elif edge_score <= -EDGE_SCORE_THRESHOLD:
+            provisional_raw = SignalState.STRONG_DOWN
+
+        persistence = self._direction_persistence(provisional_raw)
+        flip_risk = self._flip_risk(provisional_raw)
+        confidence = min(1.0, abs(edge_score) / EDGE_SCORE_STRONG) if provisional_raw != SignalState.NEUTRAL else 0.0
+        confidence = max(0.0, min(1.0, confidence * (1.0 - (flip_risk * 0.35)) + (persistence * 0.15)))
 
         # ── Ham sinyal ──
+        raw = provisional_raw
         if spread_pct >= SIGNAL_THRESHOLD_PCT:
-            if up_mid > dn_mid:
-                raw = SignalState.STRONG_UP
-            else:
-                raw = SignalState.STRONG_DOWN
-            confidence = min(1.0, spread_pct / 30.0)
-        else:
+            raw = SignalState.STRONG_UP if up_mid > dn_mid else SignalState.STRONG_DOWN
+            confidence = max(confidence, min(1.0, spread_pct / 35.0))
+        if raw != SignalState.NEUTRAL and confidence < 0.33 and not rapid_move:
             raw = SignalState.NEUTRAL
+        if raw != SignalState.NEUTRAL and persistence < 0.45 and confidence < 0.75 and not rapid_move:
+            raw = SignalState.NEUTRAL
+        if raw == SignalState.NEUTRAL:
             confidence = 0.0
+            persistence = 0.0
+
+        self._raw_history.append(raw)
+        if len(self._raw_history) > 50:
+            self._raw_history = self._raw_history[-50:]
 
         # ── Onay ──
         if raw == self._prev_state:
@@ -210,8 +314,10 @@ class SignalTracker:
             self._confirmation_count = 1
             self._prev_state = raw
 
-        if self._confirmation_count >= CONFIRMATION_COUNT:
-            if now - self._last_change_ts >= COOLDOWN_SEC:
+        required = self._required_confirmations(raw, confidence, rapid_move, persistence)
+        cooldown = self._cooldown_sec(raw, confidence, rapid_move, persistence)
+        if self._confirmation_count >= required:
+            if now - self._last_change_ts >= cooldown:
                 if raw != self.state:
                     old = self.state
                     self.state = raw
@@ -227,6 +333,10 @@ class SignalTracker:
                             spread_pct=spread_pct, raw_signal=raw,
                             confirmed=raw, confidence=confidence,
                             phase=self.current_phase, rapid_move=rapid_move,
+                            up_ref_move=up_ref_move, dn_ref_move=dn_ref_move,
+                            ref_edge=ref_edge, pressure_bias=pressure_bias,
+                            trend_bias=trend_bias, edge_score=edge_score,
+                            persistence=persistence, flip_risk=flip_risk,
                         )
                         self._on_signal(raw, snap)
 
@@ -239,6 +349,10 @@ class SignalTracker:
             spread_pct=spread_pct, raw_signal=raw,
             confirmed=self.state, confidence=confidence,
             phase=self.current_phase, rapid_move=rapid_move,
+            up_ref_move=up_ref_move, dn_ref_move=dn_ref_move,
+            ref_edge=ref_edge, pressure_bias=pressure_bias,
+            trend_bias=trend_bias, edge_score=edge_score,
+            persistence=persistence, flip_risk=flip_risk,
         )
         self.history.append(snap)
         if len(self.history) > 50:
@@ -321,6 +435,12 @@ class SignalTracker:
             "phase": self.current_phase + 1,
             "total_phases": NUM_PHASES,
             "rapid_move": last.rapid_move if last else False,
+            "ref_edge": round(last.ref_edge, 4) if last else 0,
+            "pressure_bias": round(last.pressure_bias, 4) if last else 0,
+            "trend_bias": round(last.trend_bias, 4) if last else 0,
+            "edge_score": round(last.edge_score, 4) if last else 0,
+            "persistence": round(last.persistence, 2) if last else 0,
+            "flip_risk": round(last.flip_risk, 2) if last else 0,
             "checks": self.checks,
             "signals_fired": self.signals_fired,
             "hedges": self.hedges_requested,

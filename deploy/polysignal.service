@@ -4,9 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=polysignal
+Group=polysignal
 WorkingDirectory=/home/ninetheme-bot/htdocs/bot.ninetheme.com/polysignal/polysignal
 ExecStart=/usr/bin/python3 main.py
+ProtectSystem=strict
+ReadWritePaths=/home/ninetheme-bot/htdocs/bot.ninetheme.com/polysignal/polysignal/data
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

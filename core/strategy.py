@@ -1,19 +1,11 @@
-"""PolySignal — %3 Garantili Kar Stratejisi.
-
-Matematik:
-  UP_bid + DN_bid < $1.00 → spread var
-  Kar% = spread / pair_cost × 100
-  Kar% >= 3 ise → esit cift al → GARANTI %3+ kar
-
-Ornek:
-  UP bid ¢48 + DN bid ¢49 = ¢97 | spread ¢3
-  $100 / $0.97 = 103 cift → payout $103 → kar $3 (%3.09)
+"""PolySignal — guclu yone odaklanan directional takip stratejisi.
 
 Kural:
-  1. spread/pair_cost >= %3 olana kadar BEKLE
-  2. Kosul saglaninca → esit cift al (shares %5 dengede)
-  3. Her saniye kontrol, butce bitene kadar devam
-  4. Her 5dk otomatik tekrarla
+  1. Guclu sinyal gorulunce sadece o yone alim yap.
+  2. Orderbook'ta ¢90 gorulurse yeni alim durur.
+  3. Yon tersine donup onaylaninca, yeni guclu yone eski guclu yone
+     harcanan miktar kadar catch-up yatirimi yap.
+  4. En kotu senaryodaki zarar toplam butcenin %10'unu gecemez.
 """
 
 import asyncio
@@ -23,13 +15,13 @@ import time
 from typing import Optional
 
 from config.settings import BotConfig
-from core.btc_price_feed import BtcPriceFeed
 from core.market_data import MarketDataFeed, OrderBook, LastTrade
 from core.market_scanner import MarketScanner
 from core.order_manager import OrderManager, OrderSide
 from core.paper_engine import PaperPortfolio
 from core.limit_engine import LimitEngine
 from core.signal_tracker import SignalTracker, SignalState, HedgeRequest
+from core.ai_agent import AITradingAgent
 from utils.logger import setup_logger
 
 def _create_clob_client(config):
@@ -64,34 +56,29 @@ ARCHIVE_DIR = str(_BASE / "data")
 ARCHIVE_FILE = str(_BASE / "data" / "order_archive.json")
 HISTORY_FILE = str(_BASE / "data" / "market_history.json")
 
-# Strateji
-MIN_PROFIT_PCT = 3.0    # minimum %3 kar olacak spread
-MAX_PAIR_COST = 1.00    # bid pair cost >= ¢100 ise emir gonderme
-MAX_LOSS_PCT = 10.0     # maksimum %10 zarar → tum emirler durdurulur
-MAX_SH_GAP_PCT = 3.0    # shares max %3 fark
-HEDGE_MIN_RATIO = 0.20  # zayif tarafa minimum %20
-
-# Faz bazli butce (10 faz, faz 1-2 izle, 3-8 al, 9-10 bekle)
-NUM_PHASES = 10
+# Strateji — Directional Follow + Reversal Catch-Up
+MAX_BUDGET_RISK_PCT = 10.0      # toplam butcenin en fazla %10'u riskte
+IZLE_DURATION = 30.0            # ilk 30s izleme
+MIN_IZLE_BEFORE_ENTRY = 5.0     # guclu yon erken netlesirse erken gir
+STOP_BEFORE_END = 10.0          # son 10s alim durdur
+BUDGET_PER_SEC = 0.004          # butcenin %0.4'u/saniye (250s = %100)
+DIRECTION_CONFIRM_SECS = 3      # yon degisimi onaylamak icin 3s ardisik
+NUM_PHASES = 10                 # dashboard uyumlulugu icin
 PHASE_DURATION = 30.0
-# Volatilite bazli faz butce oranlari
-PHASE_BUDGET_LOW_VOL = 0.167   # dusuk vol: %16.7/faz (6 aktif faz x %16.7 = %100)
-PHASE_BUDGET_NORMAL = 0.130    # normal: %13/faz (biraz konservatif)
-PHASE_BUDGET_HIGH_VOL = 0.08   # yuksek vol: %8/faz (toplam %48, geri kalan korunur)
-VOL_LOW_THRESHOLD = 0.05       # BTC <%0.05 degisim = dusuk
-VOL_HIGH_THRESHOLD = 0.15      # BTC >%0.15 degisim = yuksek
-
-# Orderbook derinlik filtresi
-DEPTH_MAX_RATIO = 0.20  # emir boyutu max orderbook derinliginin %20'si
-
-# Faz rolleri
-PHASE_WATCH = {0}              # izle (0-30s)
-PHASE_ACTIVE = {1,2,3,4,5,6,7}  # al (30-240s)
-PHASE_WAIT = {8, 9}            # bekle (240-300s)
+ORDERBOOK_STOP_PRICE = 0.90     # orderbook 90 gorduyse yeni alim yok
+CHEAP_TAKE_PRICE = 0.15         # ¢15 alti ucuz token firsati
+CHEAP_TAKE_BUDGET_PCT = 5.0     # toplam butcenin %5'i kadar taker alim
+MIN_TRADE_BUDGET = 5.0
+MIN_EFFECTIVE_BUDGET = 4.95
+MIN_MARKET_TIME_LEFT = 20.0
+PHASE_BUDGET_BASE_PCT = 0.03    # her fazda en az butcenin %3'u kullanilabilir
+PHASE_BUDGET_MAX_PCT = 0.16     # cok guclu sinyalde faz limiti butcenin %16'sina kadar cikar
+PHASE_RELEASE_BASE = 0.25       # zayif sinyalde faz limitinin %25'i kadar tek tick alim
+PHASE_RELEASE_MAX = 0.80        # cok guclu sinyalde faz limitinin %80'i kadar tek tick alim
 
 
 class LimitBotStrategy:
-    """%3 garantili kar — spread >= %3 olunca esit cift al."""
+    """Guclu yonde al, reversal'da karsi tarafi butceyi kurtaracak kadar tamamla."""
 
     def __init__(self, config: BotConfig):
         self.config = config
@@ -104,7 +91,7 @@ class LimitBotStrategy:
         self.limit_engine = LimitEngine(self.order_mgr, self.portfolio)
         self.scanner = MarketScanner()
         self.market_feed: Optional[MarketDataFeed] = None
-        self.btc_feed: Optional[BtcPriceFeed] = None
+        self.btc_feed = None
         self._btc_ws_task: Optional[asyncio.Task] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
         self.dashboard = None
@@ -114,7 +101,8 @@ class LimitBotStrategy:
         self._current_asset_ids: list[str] = []
         self._market_end_time: float = 0.0
         self._market_question: str = ""
-        self._start_btc_price: float = 0.0  # market basindaki BTC fiyati
+        self._market_budget: float = 0.0  # market acilisindaki butce snapshot'i
+        self._start_btc_price: float = 0.0  # legacy alan — orderbook-only modda 0 kalir
         self._ws_task: Optional[asyncio.Task] = None
         self._monitor_task: Optional[asyncio.Task] = None
 
@@ -122,9 +110,17 @@ class LimitBotStrategy:
         self._auto_mode: bool = True
         self._auto_task: Optional[asyncio.Task] = None
         self._tick_count: int = 0
-        self._lock = asyncio.Lock()
+        self._lock = None
         self.signal_tracker: Optional[SignalTracker] = None
         self._signal_state: str = SignalState.NEUTRAL
+        self._risk_sell_triggered: bool = False
+        self._cost_rebalance_triggered: bool = False
+        self._cost_block_side: Optional[str] = None  # risk nedeniyle gecici bloklu taraf
+        self._reversal_target_side: Optional[str] = None
+        self._reversal_target_cost: float = 0.0
+        self._orderbook_stop_hit: bool = False
+        self._orderbook_stop_side: Optional[str] = None
+        self._cheap_take_fired: set[str] = set()
 
         # Faz bazli butce
         self._phase_spent: list[float] = [0.0] * NUM_PHASES  # her fazda harcanan
@@ -135,10 +131,23 @@ class LimitBotStrategy:
         self._start_up_mid: float = 0
         self._start_dn_mid: float = 0
 
-        # IZLE fazi: 60s sinyal toplama
-        self._izle_samples: list[float] = []  # btc change_pct ornekleri
+        # IZLE fazi: 30s sinyal toplama
+        self._izle_samples: list[float] = []  # orderbook yon skoru ornekleri (-1..+1)
         self._izle_signal: str = SignalState.NEUTRAL  # toplanan sinyal
-        self._izle_avg: float = 0.0  # ort BTC-PTB farki
+        self._izle_avg: float = 0.0  # ort orderbook yon skoru
+
+        # Referans yon takibi (log/PTB gozlemi icin)
+        self._active_direction: Optional[str] = None  # "UP" veya "DOWN"
+        self._direction_since: float = 0  # bu yonde ne zamandir
+        self._direction_changes: int = 0  # kac kez yon degisti
+        self._pending_direction: Optional[str] = None  # onay bekleyen yon
+        self._pending_since: float = 0  # onay bekleme baslangici
+        self._strategy_state: str = "IZLE"  # IZLE / ALIM / BEKLE
+
+        # AI Agent — tam yetki
+        self.ai_agent = AITradingAgent()
+        self._ai_last_action: str = "HOLD"
+        self._ai_reasoning: str = ""
 
         self.process_log: list[str] = []
         self.stats = {"fills": 0, "orders_sent": 0, "total_cycles": 0, "markets_traded": 0}
@@ -154,6 +163,53 @@ class LimitBotStrategy:
             self.process_log = self.process_log[-50:]
         log.info(msg)
 
+    def _spawn_task(self, coro):
+        """Create a task only when a running loop exists."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            coro.close()
+            return None
+        return loop.create_task(coro)
+
+    def _budget_cap(self) -> float:
+        return self.budget
+
+    def _remaining_budget(self) -> float:
+        cap = self._budget_cap()
+        return max(0.0, cap - self.portfolio.total_cost() - self.order_mgr.pending_notional())
+
+    async def _set_budget_value(self, raw_budget: float, source: str = "UI"):
+        old_budget = self.budget
+        self.budget = max(10, float(raw_budget))
+        self.portfolio.budget = self.budget
+
+        if abs(self.budget - old_budget) < 1e-9:
+            return
+
+        if not self.bot_active:
+            self._log(f"BUTCE {source} | ${old_budget:.0f} → ${self.budget:.0f}")
+            return
+
+        spent = self.portfolio.total_cost()
+        pending = self.order_mgr.pending_notional()
+        if spent + pending > self.budget and pending > 0:
+            cancelled = await self.order_mgr.cancel_all()
+            self._log(
+                f"BUTCE {source} | ${old_budget:.0f} → ${self.budget:.0f} | "
+                f"UP+DOWN+pending tavani asti — {cancelled} emir iptal"
+            )
+        elif spent > self.budget:
+            self._log(
+                f"BUTCE {source} | ${old_budget:.0f} → ${self.budget:.0f} | "
+                f"acik pozisyon zaten ${spent:.2f}"
+            )
+        else:
+            self._log(
+                f"BUTCE {source} | ${old_budget:.0f} → ${self.budget:.0f} | "
+                f"kalan:${self._remaining_budget():.2f}"
+            )
+
     # ── Persistence ──────────────────────────────────────────────
 
     def _load_archive(self) -> list[dict]:
@@ -162,16 +218,16 @@ class LimitBotStrategy:
             if os.path.exists(ARCHIVE_FILE):
                 with open(ARCHIVE_FILE, "r") as f:
                     return json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            log.error("Archive yukleme hatasi: %s", e)
         return []
 
     def _save_archive(self):
         try:
             with open(ARCHIVE_FILE, "w") as f:
                 json.dump(self.order_archive[-200:], f, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            log.error("Archive kayit hatasi: %s", e)
 
     def _load_history(self) -> list[dict]:
         try:
@@ -179,16 +235,16 @@ class LimitBotStrategy:
             if os.path.exists(HISTORY_FILE):
                 with open(HISTORY_FILE, "r") as f:
                     return json.load(f)[-100:]
-        except Exception:
-            pass
+        except Exception as e:
+            log.error("History yukleme hatasi: %s", e)
         return []
 
     def _save_history(self):
         try:
             with open(HISTORY_FILE, "w") as f:
                 json.dump(self.market_history[-100:], f, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            log.error("History kayit hatasi: %s", e)
 
     def _archive_fill(self, token: str, price: float, size: float, cost: float):
         self.order_archive.append({
@@ -203,7 +259,7 @@ class LimitBotStrategy:
     async def handle_command(self, cmd: dict):
         action = cmd.get("action", "")
         if action in ("connect", "start"):
-            self.budget = max(10, float(cmd.get("budget", self.budget)))
+            await self._set_budget_value(cmd.get("budget", self.budget), source="START")
             if not self.bot_active:
                 asyncio.create_task(self._start())
             if not self._auto_mode:
@@ -217,7 +273,7 @@ class LimitBotStrategy:
                 self._auto_task = None
             asyncio.create_task(self._disconnect())
         elif action == "auto":
-            self.budget = max(10, float(cmd.get("budget", self.budget)))
+            await self._set_budget_value(cmd.get("budget", self.budget), source="AUTO")
             self._auto_mode = not self._auto_mode
             if self._auto_mode:
                 self._log("AUTO ON")
@@ -233,7 +289,7 @@ class LimitBotStrategy:
         elif action == "cancel":
             await self.order_mgr.cancel_all()
         elif action == "set_budget":
-            self.budget = max(10, float(cmd.get("budget", self.budget)))
+            await self._set_budget_value(cmd.get("budget", self.budget), source="MANUAL")
         elif action == "clear_history":
             self.market_history.clear()
             self._save_history()
@@ -242,8 +298,11 @@ class LimitBotStrategy:
     # ── Auto ─────────────────────────────────────────────────────
 
     async def auto_start(self):
-        self._log("━━ %3 GARANTILI KAR BOTU ━━")
-        self._log(f"Butce: ${self.budget:.0f} | Spread >= %{MIN_PROFIT_PCT:.0f} bekle → esit cift al")
+        self._log("━━ DIRECTIONAL FOLLOW BOTU ━━")
+        self._log(
+            f"Butce: ${self.budget:.0f} | Max risk: %{MAX_BUDGET_RISK_PCT:.0f} | "
+            "guclu yone takip, reversal'da catch-up"
+        )
         self._auto_mode = True
         self._auto_task = asyncio.create_task(self._auto_loop())
 
@@ -254,7 +313,7 @@ class LimitBotStrategy:
                     now = int(time.time())
                     current_window = now - (now % 300)
                     mi = self.scanner._fetch_market(current_window)
-                    if mi and mi.get("end_time", 0) > now + 30:
+                    if mi and mi.get("end_time", 0) > now + MIN_MARKET_TIME_LEFT:
                         await self._start()
                     else:
                         next_window = current_window + 300
@@ -278,14 +337,6 @@ class LimitBotStrategy:
         if self.bot_active:
             return
 
-        if not self.btc_feed:
-            self._log("Binance baglaniyor...")
-            self.btc_feed = BtcPriceFeed()
-            self._btc_ws_task = asyncio.create_task(self.btc_feed.connect())
-            await asyncio.sleep(3)
-            if self.btc_feed.current_price > 0:
-                self._log(f"BTC: ${self.btc_feed.current_price:,.2f}")
-
         now = int(time.time())
         current_window = now - (now % 300)
         mi = self.scanner._fetch_market(current_window) or self.scanner._fetch_market(current_window + 300)
@@ -293,16 +344,29 @@ class LimitBotStrategy:
             self._log("HATA: Market bulunamadi!")
             return
 
+        time_left = float(mi.get("end_time", 0) or 0) - time.time()
+        if time_left < MIN_MARKET_TIME_LEFT:
+            next_market = self.scanner._fetch_market(current_window + 300)
+            next_time_left = float(next_market.get("end_time", 0) or 0) - time.time() if next_market else 0.0
+            if next_market and next_time_left >= MIN_MARKET_TIME_LEFT:
+                mi = next_market
+            else:
+                self._log(
+                    f"Market gec acildi ({int(max(0, time_left))}s kaldi) — sonraki pencere bekleniyor"
+                )
+                return
+
         self._current_asset_ids = [mi["up_token_id"], mi["down_token_id"]]
         self._market_end_time = mi.get("end_time", 0)
         self._market_question = mi.get("question", "")
+        self._market_budget = self.budget
         self.order_mgr.tick_size = mi.get("tick_size", 0.01)
 
-        # Market basindaki BTC fiyati = referans
-        self._start_btc_price = self.btc_feed.current_price if self.btc_feed else 0
+        self.scanner.price_to_beat = 0.0
+        self._start_btc_price = 0.0
 
         self._log(f"Market: {self._market_question}")
-        self._log(f"BTC baslangic: ${self._start_btc_price:,.2f}")
+        self._log("Referans: ORDERBOOK ONLY")
 
         self.portfolio = PaperPortfolio()
         self.portfolio.budget = self.budget
@@ -310,6 +374,14 @@ class LimitBotStrategy:
         self.order_mgr.active_orders.clear()
         self._spent = 0.0
         self._tick_count = 0
+        self._risk_sell_triggered = False
+        self._cost_rebalance_triggered = False
+        self._cost_block_side = None
+        self._reversal_target_side = None
+        self._reversal_target_cost = 0.0
+        self._orderbook_stop_hit = False
+        self._orderbook_stop_side = None
+        self._cheap_take_fired = set()
 
         self.market_feed = MarketDataFeed(
             ws_url=self.config.polymarket.ws_market_url,
@@ -360,6 +432,7 @@ class LimitBotStrategy:
         if self.market_feed:
             await self.market_feed.disconnect()
             self.market_feed = None
+        self._market_budget = 0.0
         self._log("Durduruldu.")
 
     # ── Signal callback ───────────────────────────────────────────
@@ -380,19 +453,9 @@ class LimitBotStrategy:
     # ── Hedge callback ─────────────────────────────────────────────
 
     def _on_hedge_request(self, req: HedgeRequest):
-        """SignalTracker risk hedge talebi gonderdiginde cagirilir."""
-        if not self.bot_active or not self.market_feed:
-            return
-        idx = 0 if req.side == "UP" else 1
-        remaining = max(0, self.budget - self.portfolio.total_cost() - self.order_mgr.pending_notional())
-        hedge_budget = min(req.max_cost, remaining)
-        if hedge_budget < 1.0 or req.price <= 0:
-            return
-        size = round(hedge_budget / req.price, 1)
-        if size < 5.0:
-            return
-        # Senkron callback icinde async emir koyamayiz — task olustur
-        asyncio.create_task(self._place_hedge(idx, req.side, req.price, size, hedge_budget))
+        """SignalTracker hedge callback'i bu stratejide kullanilmiyor."""
+        del req
+        return
 
     async def _place_hedge(self, idx: int, side: str, price: float, size: float, budget: float):
         """Hedge emrini yerlestirir."""
@@ -403,13 +466,15 @@ class LimitBotStrategy:
             self.stats["orders_sent"] += 1
             self._log(f"HEDGE {side} | {size:.0f}sh @¢{price*100:.0f} = ${budget:.2f}")
 
-    # ── Main Loop: 10 faz x 30s, her faz $UP + $DN esit taker ──
+    # ── Main Loop: guclu yonu takip et, reversal'da catch-up yap ──
 
     async def _main_loop(self):
-        """300 saniye = 10 faz x 30 saniye.
-        Her faz: butcenin %10'u = $100 → $50 UP + $50 DN taker emir.
-        Sinyal varsa max %5 kayma (52.50/47.50).
-        Faz bitene kadar emir gonderilmez — 30 saniye bekle.
+        """Directional follow stratejisi.
+
+        1. IZLE: orderbook ile guclu yonu topla (maks 30s)
+        2. ALIM: aktif guclu yone alim yap
+        3. Reversal: yeni guclu yone eski taraf kadar catch-up yatir
+        4. Risk: worst-case zarar toplam butcenin %10'unu gecmesin
         """
         # Orderbook hazir olana kadar bekle
         for _ in range(20):
@@ -431,57 +496,110 @@ class LimitBotStrategy:
         self._izle_samples = []
         self._izle_signal = SignalState.NEUTRAL
         self._izle_avg = 0.0
+        self._active_direction = None
+        self._direction_since = 0
+        self._direction_changes = 0
+        self._pending_direction = None
+        self._pending_since = 0
+        self._strategy_state = "IZLE"
 
         self._log(
-            f"BASLA | ref UP¢{self._start_up_mid*100:.0f} DN¢{self._start_dn_mid*100:.0f} | "
-            f"${self.budget:.0f} | F1-2:IZLE(60s sinyal topla) F3-8:AL F9-10:BEKLE"
+            f"BASLA | ORDERBOOK ONLY | ${self._market_budget:.0f} | "
+            "maks 30s IZLE → GUCLU YON TAKIP"
         )
 
         while self.bot_active:
             try:
                 now = time.time()
                 time_left = max(0, self._market_end_time - now) if self._market_end_time else 999
+                elapsed = now - self._market_start_ts
                 self._tick_count += 1
                 self.order_mgr.expire_stale_orders()
+                phase = min(NUM_PHASES - 1, int(elapsed / PHASE_DURATION))
+                self._current_phase = phase
 
-                if time_left <= 5:
+                if time_left <= 0:
                     await self._resolve_market()
                     return
 
-                # ── Faz hesabi ──
-                elapsed = now - self._market_start_ts
-                phase = min(NUM_PHASES - 1, int(elapsed / PHASE_DURATION))
-
                 # ── Risk kontrolu: her tick ──
-                if self._check_max_loss():
-                    # Zarar %10'u gecti → bekleyen emirleri iptal et, yeni emir gonderme
-                    await self.order_mgr.cancel_all()
-                    await asyncio.sleep(1)
-                    continue
+                self._check_max_loss()
 
-                # ── IZLE fazinda sinyal topla ──
-                if phase in PHASE_WATCH:
-                    if self.btc_feed and self.btc_feed.current_price > 0:
-                        self._izle_samples.append(self.btc_feed.change_pct)
+                # ── Anlik yon sinyali: sadece orderbook ──
+                current_dir = self._get_preferred_direction()
 
-                # ── Yeni faz basladi ──
-                if phase != self._current_phase:
-                    old_phase = self._current_phase
-                    self._current_phase = phase
+                if self._strategy_state != "BEKLE":
+                    await self._buy_cheap_token_if_needed(time_left)
 
-                    if phase in PHASE_WATCH:
-                        self._log(f"FAZ {phase+1}/{NUM_PHASES} IZLE | sinyal toplaniyor | {int(time_left)}s")
+                # ══════════════════════════════════════
+                # DURUM MAKINESI
+                # ══════════════════════════════════════
 
-                    elif phase in PHASE_WAIT:
-                        self._log(f"FAZ {phase+1}/{NUM_PHASES} BEKLE | sonuc bekleniyor | {int(time_left)}s")
+                if self._strategy_state == "IZLE":
+                    # ── 30s izleme: sinyal topla ──
+                    self._izle_samples.append(
+                        1.0 if current_dir == "UP" else -1.0 if current_dir == "DOWN" else 0.0
+                    )
 
+                    if current_dir and elapsed >= self._entry_wait_secs(current_dir):
+                        self._lock_izle_signal()
+                        self._activate_directional_entry(current_dir, early=True)
+                    elif elapsed >= IZLE_DURATION:
+                        self._lock_izle_signal()
+                        if current_dir:
+                            self._activate_directional_entry(current_dir)
+                        else:
+                            self._strategy_state = "ALIM"
+                            self._log("YON BELIRSIZ — sinyal bekleniyor")
+
+                elif self._strategy_state == "ALIM":
+                    if self._orderbook_stop_hit:
+                        self._strategy_state = "BEKLE"
+                        self._log(
+                            f"BEKLE | {self._orderbook_stop_side or '-'} orderbook ¢90 gordu — alim durduruldu"
+                        )
+                        await self.order_mgr.cancel_all()
+                    elif time_left <= STOP_BEFORE_END:
+                        self._strategy_state = "BEKLE"
+                        self._log(f"BEKLE | son {STOP_BEFORE_END:.0f}s — alim durduruldu")
+                        await self.order_mgr.cancel_all()
                     else:
-                        # Ilk AL fazina geciste IZLE verisini kilitle
-                        if old_phase in PHASE_WATCH or (old_phase == -1 and phase in PHASE_ACTIVE):
-                            self._lock_izle_signal()
-                        await self._execute_phase(phase, time_left)
+                        # ══ AI AGENT KARAR MEKANIZMASI ══
+                        if self.ai_agent.is_enabled:
+                            await self._ai_tick(current_dir, time_left, elapsed)
+                        else:
+                            # Fallback: kural bazli strateji
+                            if not self._active_direction and current_dir:
+                                self._active_direction = current_dir
+                                self._direction_since = now
+                                self._log(f"YON AKTIFLESTI: {current_dir}")
 
-                # Portfolio guncelle (signal tracker icin)
+                            # Yon degisimi kontrolu (3s onay)
+                            if current_dir and current_dir != self._active_direction:
+                                if self._pending_direction != current_dir:
+                                    self._pending_direction = current_dir
+                                    self._pending_since = now
+                                elif now - self._pending_since >= self._direction_confirm_secs(current_dir):
+                                    old_dir = self._active_direction
+                                    self._active_direction = current_dir
+                                    self._direction_since = now
+                                    self._direction_changes += 1
+                                    self._pending_direction = None
+                                    self._arm_reversal_target(old_dir, current_dir)
+                                    self._log(
+                                        f"YON DEGISTI: {old_dir} → {current_dir} | "
+                                        f"#{self._direction_changes} | reversal takip aktif"
+                                    )
+                            else:
+                                self._pending_direction = None
+
+                            if self._active_direction:
+                                await self._buy_in_direction(self._active_direction, time_left)
+
+                elif self._strategy_state == "BEKLE":
+                    pass  # Son saniyeler, islem yok
+
+                # ── Portfolio guncelle ──
                 up_sh = self.portfolio.up.shares
                 dn_sh = self.portfolio.down.shares
                 if self.signal_tracker:
@@ -489,20 +607,26 @@ class LimitBotStrategy:
                         up_sh, dn_sh,
                         self.portfolio.up.total_cost, self.portfolio.down.total_cost)
 
-                # Periyodik log (her 5 saniye)
+                # ── Maliyet dengeleme kontrolu (her 3s) ──
+                if self._tick_count % 3 == 0 and self._strategy_state == "ALIM":
+                    await self._rebalance_if_needed(phase, time_left)
+
+                # ── Periyodik log (her 5s) ──
                 if self._tick_count % 5 == 0:
-                    paired = min(up_sh, dn_sh)
-                    up_book = self.market_feed.get_book(self._current_asset_ids[0]) if self.market_feed else None
-                    dn_book = self.market_feed.get_book(self._current_asset_ids[1]) if self.market_feed else None
-                    up_ask = (up_book.best_ask or 0) if up_book else 0
-                    dn_ask = (dn_book.best_ask or 0) if dn_book else 0
-                    sig_info = self.signal_tracker.current() if self.signal_tracker else {}
+                    tc = self.portfolio.total_cost()
+                    up_cost = self.portfolio.up.total_cost
+                    dn_cost = self.portfolio.down.total_cost
+                    worst_loss = self._worst_case_loss_after(0, 0, 0, 0)
+                    budget_cap = self._budget_cap()
+                    risk_pct = worst_loss / budget_cap * 100 if budget_cap > 0 else 0
+                    dir_label = self._active_direction or "—"
+                    dir_secs = int(now - self._direction_since) if self._direction_since else 0
                     self._log(
-                        f"[F{phase+1}/{NUM_PHASES}] "
-                        f"UP¢{up_ask*100:.0f} DN¢{dn_ask*100:.0f} | "
-                        f"YKR{up_sh:.0f} ASG{dn_sh:.0f} Cift:{paired:.0f} | "
-                        f"${self.portfolio.total_cost():.0f}/{self.budget:.0f} | "
-                        f"makas%{sig_info.get('spread_pct',0):.0f} | {int(time_left)}s"
+                        f"[{self._strategy_state}] {dir_label}({dir_secs}s) | "
+                        f"UP:{up_sh:.0f}sh DN:{dn_sh:.0f}sh | "
+                        f"${tc:.0f}/{budget_cap:.0f} | "
+                        f"risk:${worst_loss:.1f}(%{risk_pct:.0f}) | "
+                        f"flip:{self._direction_changes} | {int(time_left)}s"
                     )
 
                 self.stats["total_cycles"] += 1
@@ -514,175 +638,606 @@ class LimitBotStrategy:
 
             await asyncio.sleep(1)
 
-    # ── Risk kontrolu: max %10 zarar ────────────────────────────
+    # ── Yon Sinyali ───────────────────────────────────────────────
+
+    def _signal_to_direction(self, signal_state: Optional[str] = None) -> Optional[str]:
+        state = signal_state or self._signal_state
+        if state == SignalState.STRONG_UP:
+            return "UP"
+        if state == SignalState.STRONG_DOWN:
+            return "DOWN"
+        return None
+
+    def _get_preferred_direction(self) -> Optional[str]:
+        """Yon tamamen orderbook sinyalinden gelir."""
+        snap = self._latest_signal_snapshot()
+        if not snap:
+            return self._signal_to_direction()
+
+        confirmed = self._signal_to_direction(snap.confirmed)
+        if confirmed:
+            return confirmed
+
+        raw = self._signal_to_direction(snap.raw_signal)
+        if not raw:
+            return None
+
+        edge = abs(getattr(snap, "edge_score", 0.0))
+        persistence = getattr(snap, "persistence", 0.0)
+        fast_track = (
+            edge >= 0.08 and persistence >= 0.55 and
+            (snap.confidence >= 0.70 or (snap.rapid_move and snap.confidence >= 0.60))
+        )
+        return raw if fast_track else None
+
+    def _activate_directional_entry(self, direction: str, early: bool = False):
+        self._active_direction = direction
+        self._direction_since = time.time()
+        self._strategy_state = "ALIM"
+        prefix = "ERKEN GIRIS" if early else "REFERANS YON"
+        self._log(f"{prefix}: {direction} | takipli alim basliyor")
+
+    def _entry_wait_secs(self, direction: str) -> float:
+        snap = self._latest_signal_snapshot()
+        if not snap:
+            return MIN_IZLE_BEFORE_ENTRY
+
+        raw_dir = self._signal_to_direction(snap.raw_signal)
+        confirmed_dir = self._signal_to_direction(snap.confirmed)
+        edge = abs(getattr(snap, "edge_score", 0.0))
+        persistence = getattr(snap, "persistence", 0.0)
+        aligned = raw_dir == direction or confirmed_dir == direction
+        if not aligned:
+            return MIN_IZLE_BEFORE_ENTRY
+
+        if snap.rapid_move and snap.confidence >= 0.85 and persistence >= 0.70 and edge >= 0.12:
+            return 2.0
+        if snap.confidence >= 0.72 and persistence >= 0.60 and edge >= 0.08:
+            return 3.0
+        return MIN_IZLE_BEFORE_ENTRY
+
+    def _direction_confirm_secs(self, direction: str) -> float:
+        snap = self._latest_signal_snapshot()
+        if not snap:
+            return DIRECTION_CONFIRM_SECS
+
+        raw_dir = self._signal_to_direction(snap.raw_signal)
+        if raw_dir != direction:
+            return DIRECTION_CONFIRM_SECS
+
+        edge = abs(getattr(snap, "edge_score", 0.0))
+        persistence = getattr(snap, "persistence", 0.0)
+        if snap.rapid_move and snap.confidence >= 0.85 and persistence >= 0.70 and edge >= 0.12:
+            return 1.0
+        if snap.confidence >= 0.70 and persistence >= 0.60 and edge >= 0.08:
+            return 2.0
+        return DIRECTION_CONFIRM_SECS
+
+    # ── AI Agent Tick ─────────────────────────────────────────────
+
+    async def _ai_tick(self, current_dir: Optional[str], time_left: float, elapsed: float):
+        """AI agent'a market snapshot'i gonder, kararina gore islem yap."""
+        up_book = self.market_feed.get_book(self._current_asset_ids[0]) if self.market_feed else None
+        dn_book = self.market_feed.get_book(self._current_asset_ids[1]) if self.market_feed else None
+
+        ctx = {
+            "time_left": time_left,
+            "elapsed": elapsed,
+            "budget": self._budget_cap(),
+            "remaining": self._remaining_budget(),
+            "up_shares": self.portfolio.up.shares,
+            "down_shares": self.portfolio.down.shares,
+            "up_cost": self.portfolio.up.total_cost,
+            "down_cost": self.portfolio.down.total_cost,
+            "total_cost": self.portfolio.total_cost(),
+            "worst_pnl": min(self.portfolio.up.shares, self.portfolio.down.shares) - self.portfolio.total_cost() if self.portfolio.total_cost() > 0 else 0,
+            "risk_pct": self._worst_case_loss_after(0, 0, 0, 0) / self._budget_cap() * 100 if self._budget_cap() > 0 else 0,
+            "up_bid": (up_book.best_bid or 0) if up_book else 0,
+            "up_ask": (up_book.best_ask or 0) if up_book else 0,
+            "dn_bid": (dn_book.best_bid or 0) if dn_book else 0,
+            "dn_ask": (dn_book.best_ask or 0) if dn_book else 0,
+            "up_bid_depth": sum(l.size for l in up_book.bids[:5]) if up_book and up_book.bids else 0,
+            "dn_bid_depth": sum(l.size for l in dn_book.bids[:5]) if dn_book and dn_book.bids else 0,
+            "active_orders": len(self.order_mgr.active_orders),
+            "direction_changes": self._direction_changes,
+            "current_direction": current_dir,
+            "strategy_state": self._strategy_state,
+            "recent_fills": self.stats["fills"],
+        }
+
+        decision = await self.ai_agent.decide(ctx)
+        if not decision:
+            # AI yanit vermedi — fallback: mevcut yone devam
+            if self._active_direction:
+                await self._buy_in_direction(self._active_direction, time_left)
+            return
+
+        self._ai_last_action = decision.action
+        self._ai_reasoning = decision.reasoning
+
+        # ── AI kararini execute et ──
+        if decision.action == "HOLD":
+            return
+
+        elif decision.action == "CANCEL_ALL":
+            await self.order_mgr.cancel_all()
+            self._log(f"AI: CANCEL_ALL | {decision.reasoning}")
+
+        elif decision.action in ("BUY_UP", "BUY_DOWN"):
+            side = "UP" if decision.action == "BUY_UP" else "DOWN"
+            idx = self._index_for_side(side)
+            book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
+            if not book:
+                return
+
+            budget = self._budget_cap() * (decision.budget_pct / 100.0)
+            remaining = self._remaining_budget()
+            budget = min(budget, remaining)
+
+            if budget < MIN_TRADE_BUDGET:
+                return
+
+            # Yon guncelle
+            if self._active_direction != side:
+                old = self._active_direction
+                self._active_direction = side
+                self._direction_since = time.time()
+                if old and old != side:
+                    self._direction_changes += 1
+                    self._arm_reversal_target(old, side)
+
+            if decision.use_taker and book.best_ask and book.best_ask < ORDERBOOK_STOP_PRICE:
+                budget = self._budget_fits_risk(side, book.best_ask, budget)
+                if budget >= MIN_TRADE_BUDGET:
+                    spent = await self._taker_buy(side, idx, book.best_ask, budget)
+                    if spent > 0:
+                        self._log(f"AI TAKER {side} | ${spent:.2f} | {decision.reasoning}")
+            elif book.best_bid and book.best_bid < ORDERBOOK_STOP_PRICE:
+                budget = self._budget_fits_risk(side, book.best_bid, budget)
+                if budget >= MIN_TRADE_BUDGET:
+                    placed = await self._maker_buy(side, idx, book.best_bid, budget)
+                    if placed > 0:
+                        self._log(f"AI MAKER {side} | ${placed:.2f} | {decision.reasoning}")
+
+        elif decision.action in ("HEDGE_UP", "HEDGE_DOWN"):
+            side = "UP" if decision.action == "HEDGE_UP" else "DOWN"
+            idx = self._index_for_side(side)
+            book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
+            if not book or not book.best_ask:
+                return
+
+            budget = self._budget_cap() * (decision.budget_pct / 100.0)
+            remaining = self._remaining_budget()
+            budget = min(budget, remaining)
+
+            if budget < MIN_TRADE_BUDGET:
+                return
+
+            # Hedge = taker (aninda dolum)
+            budget = self._budget_fits_risk(side, book.best_ask, budget)
+            if budget >= MIN_TRADE_BUDGET:
+                spent = await self._taker_buy(side, idx, book.best_ask, budget)
+                if spent > 0:
+                    self._log(f"AI HEDGE {side} | ${spent:.2f} | {decision.reasoning}")
+
+    def _ledger_for_side(self, side: str):
+        return self.portfolio.up if side == "UP" else self.portfolio.down
+
+    def _index_for_side(self, side: str) -> int:
+        return 0 if side == "UP" else 1
+
+    def _other_side(self, side: str) -> str:
+        return "DOWN" if side == "UP" else "UP"
+
+    def _arm_reversal_target(self, old_direction: Optional[str], new_direction: str):
+        if not old_direction or old_direction == new_direction:
+            self._reversal_target_side = None
+            self._reversal_target_cost = 0.0
+            return
+
+        old_cost = self._ledger_for_side(old_direction).total_cost
+        new_cost = self._ledger_for_side(new_direction).total_cost
+        target_cost = max(old_cost, new_cost)
+        if target_cost - new_cost < 1.0:
+            self._reversal_target_side = None
+            self._reversal_target_cost = 0.0
+            return
+
+        self._reversal_target_side = new_direction
+        self._reversal_target_cost = target_cost
+        self._log(
+            f"REVERSAL HEDEF | {new_direction} catch-up ${max(0.0, target_cost - new_cost):.2f}"
+        )
+
+    def _planned_budget_for_direction(self, direction: str, remaining: float) -> float:
+        if remaining < MIN_EFFECTIVE_BUDGET:
+            return 0.0
+
+        phase_room = self._phase_budget_room(direction, remaining)
+        if phase_room < MIN_EFFECTIVE_BUDGET:
+            return 0.0
+
+        base_budget = max(MIN_TRADE_BUDGET, self._budget_cap() * BUDGET_PER_SEC)
+        aggression = self._aggression_multiplier(direction)
+        release_ratio = self._phase_release_ratio(direction)
+        budget = max(base_budget * aggression, phase_room * release_ratio)
+        budget = min(budget, phase_room, remaining)
+
+        if self._reversal_target_side == direction:
+            current_cost = self._ledger_for_side(direction).total_cost
+            catch_up_budget = max(0.0, self._reversal_target_cost - current_cost)
+            if catch_up_budget < 1.0:
+                self._reversal_target_side = None
+                self._reversal_target_cost = 0.0
+                return budget
+            budget = max(budget, min(catch_up_budget, phase_room))
+            return min(max(MIN_TRADE_BUDGET, budget), remaining)
+
+        return budget
+
+    def _latest_signal_snapshot(self):
+        if self.signal_tracker and self.signal_tracker.history:
+            return self.signal_tracker.history[-1]
+        return None
+
+    def _signal_strength_for_direction(self, direction: str) -> tuple[float, bool]:
+        snap = self._latest_signal_snapshot()
+        if not snap:
+            return 0.0, False
+
+        confirmed_dir = self._signal_to_direction(snap.confirmed)
+        raw_dir = self._signal_to_direction(snap.raw_signal)
+        strength = 0.0
+        aligns = False
+        edge_strength = min(1.0, abs(getattr(snap, "edge_score", 0.0)) / 0.18)
+        persistence = min(1.0, max(0.0, getattr(snap, "persistence", 0.0)))
+
+        if confirmed_dir == direction:
+            strength = max(
+                strength,
+                min(1.0, (snap.confidence * 0.55) + (edge_strength * 0.25) + (persistence * 0.20)),
+            )
+            aligns = True
+        elif raw_dir == direction:
+            strength = max(
+                strength,
+                min(1.0, (snap.confidence * 0.45) + (edge_strength * 0.35) + (persistence * 0.20)),
+            )
+            aligns = True
+
+        rapid = bool(snap.rapid_move and aligns)
+        return min(1.0, strength), rapid
+
+    def _aggression_multiplier(self, direction: str) -> float:
+        strength, rapid = self._signal_strength_for_direction(direction)
+        phase_progress = (
+            (self._current_phase + 1) / NUM_PHASES
+            if 0 <= self._current_phase < NUM_PHASES else 0.0
+        )
+        sustain = 0.0
+        if self._active_direction == direction and self._direction_since:
+            sustain = min(1.0, max(0.0, time.time() - self._direction_since) / PHASE_DURATION)
+
+        multiplier = 1.0 + (strength * 1.8) + (phase_progress * 0.4) + (sustain * 0.6)
+        if rapid:
+            multiplier += 0.4
+        if self._reversal_target_side == direction:
+            multiplier += 0.5
+
+        return min(4.0, max(1.0, multiplier))
+
+    def _phase_release_ratio(self, direction: str) -> float:
+        strength, rapid = self._signal_strength_for_direction(direction)
+        release = PHASE_RELEASE_BASE + (PHASE_RELEASE_MAX - PHASE_RELEASE_BASE) * strength
+        if rapid:
+            release += 0.10
+        if self._reversal_target_side == direction:
+            release += 0.10
+        return min(0.90, max(PHASE_RELEASE_BASE, release))
+
+    def _phase_budget_room(self, direction: str, remaining: float) -> float:
+        if remaining < MIN_EFFECTIVE_BUDGET:
+            return 0.0
+
+        strength, rapid = self._signal_strength_for_direction(direction)
+        phase_progress = (
+            (self._current_phase + 1) / NUM_PHASES
+            if 0 <= self._current_phase < NUM_PHASES else 0.0
+        )
+        phase_ratio = PHASE_BUDGET_BASE_PCT + (PHASE_BUDGET_MAX_PCT - PHASE_BUDGET_BASE_PCT) * strength
+        phase_ratio += phase_progress * 0.02
+        if rapid:
+            phase_ratio += 0.02
+        if self._reversal_target_side == direction:
+            phase_ratio += 0.03
+
+        phase_cap = min(remaining, self._budget_cap() * min(PHASE_BUDGET_MAX_PCT, phase_ratio))
+        if 0 <= self._current_phase < NUM_PHASES:
+            phase_cap = max(0.0, phase_cap - self._phase_spent[self._current_phase])
+        return phase_cap
+
+    def _record_phase_spend(self, amount: float):
+        if amount <= 0:
+            return
+        if 0 <= self._current_phase < NUM_PHASES:
+            self._phase_spent[self._current_phase] += amount
+
+    async def _buy_cheap_token_if_needed(self, time_left: float):
+        """¢15 alti token gorulurse ayni markette bir kez %5 butceyle taker al."""
+        if time_left <= STOP_BEFORE_END or not self.market_feed:
+            return
+
+        remaining = self._remaining_budget()
+        if remaining < MIN_EFFECTIVE_BUDGET:
+            return
+
+        desired_budget = min(self._budget_cap() * (CHEAP_TAKE_BUDGET_PCT / 100.0), remaining)
+        if desired_budget < MIN_EFFECTIVE_BUDGET:
+            return
+
+        for side in ("UP", "DOWN"):
+            if side in self._cheap_take_fired:
+                continue
+
+            idx = self._index_for_side(side)
+            book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
+            if not book or not book.best_ask:
+                continue
+
+            ask = book.best_ask
+            if ask <= 0 or ask > CHEAP_TAKE_PRICE:
+                continue
+
+            budget = self._budget_fits_risk(side, ask, desired_budget)
+            if budget < MIN_EFFECTIVE_BUDGET:
+                continue
+
+            spent = await self._taker_buy(side, idx, ask, budget)
+            if spent > 0:
+                self._cheap_take_fired.add(side)
+                self._log(
+                    f"ALT15 TAKER {side} | ${spent:.2f}@¢{ask*100:.0f} | "
+                    f"butce%{CHEAP_TAKE_BUDGET_PCT:.0f}"
+                )
+
+    def _budget_fits_risk(self, side: str, price: float, desired_budget: float) -> float:
+        if desired_budget < MIN_EFFECTIVE_BUDGET or price <= 0 or price >= 1.0:
+            return 0.0
+
+        max_loss = self._budget_cap() * (MAX_BUDGET_RISK_PCT / 100.0)
+        candidate = desired_budget
+
+        for _ in range(12):
+            size = round(candidate / price, 1)
+            if size < 5.0:
+                return 0.0
+            cost = size * price
+            extra = (cost, size, 0.0, 0.0) if side == "UP" else (0.0, 0.0, cost, size)
+            if self._worst_case_loss_after(*extra) <= max_loss + 1e-6:
+                return cost
+            candidate *= 0.5
+            if candidate < MIN_EFFECTIVE_BUDGET:
+                break
+
+        return 0.0
+
+    # ── Yone Gore Alim ────────────────────────────────────────────
+
+    async def _buy_in_direction(self, direction: str, time_left: float):
+        """Sadece aktif guclu yone alim yap, reversal'da catch-up hedefini uygula."""
+        del time_left
+        idx = self._index_for_side(direction)
+        book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
+        if not book or not book.best_bid:
+            return
+
+        bid = book.best_bid
+        ask = book.best_ask or bid
+        top_seen = max(book.best_bid or 0.0, book.best_ask or 0.0)
+        if bid <= 0:
+            return
+
+        if top_seen >= ORDERBOOK_STOP_PRICE:
+            self._orderbook_stop_hit = True
+            self._orderbook_stop_side = direction
+            return
+
+        if self._cost_block_side == direction:
+            return
+
+        remaining = self._remaining_budget()
+        if remaining < MIN_EFFECTIVE_BUDGET:
+            return
+
+        planned_budget = self._planned_budget_for_direction(direction, remaining)
+        budget = self._budget_fits_risk(direction, ask, planned_budget)
+        if budget < MIN_EFFECTIVE_BUDGET:
+            return
+
+        placed = await self._taker_buy(direction, idx, ask, budget)
+        if placed > 0:
+            tag = "REVERSAL" if self._reversal_target_side == direction else "TAKIP"
+            self._log(
+                f"{tag} ALIM {direction} | ${placed:.2f}@¢{ask*100:.0f} | "
+                f"UP:${self.portfolio.up.total_cost:.2f} DN:${self.portfolio.down.total_cost:.2f}"
+            )
+
+    # ── Hedge: Yon Degistiginde Sifir Zarar Dengeleme ─────────────
+
+    async def _hedge_to_zero_loss(self, new_direction: str, time_left: float):
+        """Bu stratejide ayri hedge akisi yok; reversal catch-up kullaniliyor."""
+        del new_direction, time_left
+        return
+
+    # ── Risk kontrolu ─────────────────────────────────────
 
     def _check_max_loss(self) -> bool:
-        """Worst-case zarar %10'u gecerse True doner → emir gonderme.
+        """Worst-case zarar butcenin %10'unu gecerse agir tarafi blokla."""
+        up_payout = self.portfolio.up.shares + self.portfolio.up.total_revenue
+        dn_payout = self.portfolio.down.shares + self.portfolio.down.total_revenue
+        worst_loss = self._worst_case_loss_after(0, 0, 0, 0)
+        max_loss = self._budget_cap() * (MAX_BUDGET_RISK_PCT / 100.0)
 
-        Hesap:
-          UP kazanirsa: payout = UP_shares × $1
-          DOWN kazanirsa: payout = DN_shares × $1
-          worst_pnl = min(UP payout, DN payout) - total_cost
-          zarar% = |worst_pnl| / budget × 100
-
-        Ornek: $1000 butce, $100 harcandi
-          UP: 80sh, DN: 20sh → UP kazanir: $80-$100=-$20, DN kazanir: $20-$100=-$80
-          worst = -$80, zarar% = 80/1000 = %8 → OK
-          worst = -$110 olursa, %11 > %10 → DURDUR
-        """
-        cost = self.portfolio.total_cost()
-        if cost <= 0:
+        if self.portfolio.total_cost() <= 0:
+            self._cost_block_side = None
+            self._cost_rebalance_triggered = False
             return False
 
-        up_sh = self.portfolio.up.shares
-        dn_sh = self.portfolio.down.shares
+        if worst_loss <= max_loss:
+            self._cost_block_side = None
+            self._cost_rebalance_triggered = False
+            return False
 
-        # Her iki senaryo
-        up_wins_pnl = up_sh - cost     # UP kazanirsa
-        dn_wins_pnl = dn_sh - cost     # DOWN kazanirsa
-        worst_pnl = min(up_wins_pnl, dn_wins_pnl)
+        weak_side = "UP" if up_payout < dn_payout else "DOWN"
+        heavy_side = self._other_side(weak_side)
+        weak_idx = self._index_for_side(weak_side)
 
-        if worst_pnl >= 0:
-            return False  # Her iki senaryoda da kar — sorun yok
-
-        loss_pct = abs(worst_pnl) / self.budget * 100
-
-        if loss_pct >= MAX_LOSS_PCT:
+        if self._cost_block_side != heavy_side:
+            self._cost_block_side = heavy_side
             self._log(
-                f"RISK DURDUR | zarar%{loss_pct:.1f} >= %{MAX_LOSS_PCT:.0f} | "
-                f"worst:${worst_pnl:+.0f} cost:${cost:.0f} | "
-                f"UP:{up_sh:.0f}sh DN:{dn_sh:.0f}sh"
+                f"RISK UYARI | zarar:${worst_loss:.2f}/${max_loss:.2f} | "
+                f"{heavy_side} BLOKE — {weak_side} butceyi toparlamali"
             )
-            return True
-        return False
 
-    # ── Faz emirleri ────────────────────────────────────────────
+        if not self._cost_rebalance_triggered:
+            self._cost_rebalance_triggered = True
+            if self._active_direction == weak_side:
+                catch_up_budget = max(
+                    MIN_TRADE_BUDGET,
+                    self._ledger_for_side(heavy_side).total_cost - self._ledger_for_side(weak_side).total_cost,
+                )
+                self._spawn_task(self._emergency_rebalance(weak_side, weak_idx, catch_up_budget))
 
-    def _phase_budget_pct(self) -> float:
-        """Volatiliteye gore faz butce orani."""
-        if not self.btc_feed:
-            return PHASE_BUDGET_NORMAL
-        vol = abs(self.btc_feed.change_pct)
-        if vol < VOL_LOW_THRESHOLD:
-            return PHASE_BUDGET_LOW_VOL
-        elif vol > VOL_HIGH_THRESHOLD:
-            return PHASE_BUDGET_HIGH_VOL
-        return PHASE_BUDGET_NORMAL
+        return True
 
-    def _orderbook_depth(self, book) -> float:
-        """Top 5 bid seviyesindeki toplam share sayisi."""
-        if not book or not book.bids:
-            return 0.0
-        return sum(level.size for level in book.bids[:5])
+    async def _emergency_rebalance(self, side: str, idx: int, budget: float):
+        """Acil toparlama: zayif tarafi taker ile toparla."""
+        book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
+        if not book or not book.best_ask:
+            self._log(f"ACIL TOPARLAMA {side} BASARISIZ | ask yok")
+            return
+
+        ask = book.best_ask
+        if ask <= 0 or ask >= ORDERBOOK_STOP_PRICE:
+            return
+
+        remaining = self._remaining_budget()
+        catch_up_budget = min(budget, remaining)
+        catch_up_budget = self._budget_fits_risk(side, ask, catch_up_budget)
+        if catch_up_budget < MIN_EFFECTIVE_BUDGET:
+            return
+
+        cost = await self._taker_buy(side, idx, ask, catch_up_budget)
+        if cost > 0:
+            self._log(
+                f"ACIL TOPARLAMA {side} | +${cost:.2f} @¢{ask*100:.0f} | "
+                f"UP:${self.portfolio.up.total_cost:.2f} DN:${self.portfolio.down.total_cost:.2f}"
+            )
+
+    async def _risk_reduce(self, side: str, idx: int, shares: float):
+        """Risk azaltma: fazla tarafin bir kismini sat."""
+        book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
+        if not book or not book.best_ask:
+            self._log(f"RISK SATIS BASARISIZ {side} | ask yok")
+            return
+
+        ask = book.best_ask
+        if ask <= 0 or ask >= 1.0:
+            return
+
+        order = await self.order_mgr.place_limit_order(
+            asset_id=self._current_asset_ids[idx],
+            side=OrderSide.SELL, price=ask, size=shares,
+            expiration_sec=90, taker=True)
+
+        if order:
+            # Taker satis: aninda doldugu varsayilir
+            ledger = self.portfolio.up if side == "UP" else self.portfolio.down
+            ledger.record_sell(ask, shares, 0)
+            revenue = ask * shares
+            self._log(
+                f"RISK SATIS {side} | {shares:.0f}sh @¢{ask*100:.0f} = ${revenue:.2f} | "
+                f"UP:{self.portfolio.up.shares:.0f} DN:{self.portfolio.down.shares:.0f}"
+            )
+            self.stats["fills"] += 1
+
+    # ── Risk Hesaplari ──────────────────────────────────────────
 
     def _worst_case_after(self, extra_up_cost: float, extra_up_sh: float,
                           extra_dn_cost: float, extra_dn_sh: float) -> float:
-        """Simdi + planlanan alim sonrasi worst-case zarar yuzdesini hesapla."""
+        """Geri uyumluluk: worst-case zarari butceye gore yuzde olarak dondur."""
+        loss = self._worst_case_loss_after(extra_up_cost, extra_up_sh, extra_dn_cost, extra_dn_sh)
+        if self._budget_cap() <= 0:
+            return 0.0
+        return loss / self._budget_cap() * 100
+
+    def _worst_case_loss_after(self, extra_up_cost: float, extra_up_sh: float,
+                               extra_dn_cost: float, extra_dn_sh: float) -> float:
+        """Simdi + planlanan alim sonrasi mutlak worst-case zarari hesapla."""
         cost = self.portfolio.total_cost() + extra_up_cost + extra_dn_cost
         if cost <= 0:
             return 0.0
         up_sh = self.portfolio.up.shares + extra_up_sh
         dn_sh = self.portfolio.down.shares + extra_dn_sh
-        worst_pnl = min(up_sh - cost, dn_sh - cost)
+        up_rev = self.portfolio.up.total_revenue
+        dn_rev = self.portfolio.down.total_revenue
+        worst_pnl = min((up_sh + up_rev) - cost, (dn_sh + dn_rev) - cost)
         if worst_pnl >= 0:
             return 0.0
-        return abs(worst_pnl) / self.budget * 100
+        return abs(worst_pnl)
 
-    async def _execute_phase(self, phase: int, time_left: float):
-        """Aktif faz: ESIT SHARE al. Sinyal yok, skew yok, basit.
-
-        Matematik:
-          N share UP @¢P1 + N share DN @¢P2 = N × (P1+P2) maliyet
-          UP kazanirsa: N × $1 payout
-          DN kazanirsa: N × $1 payout
-          Kar = N × (1 - P1 - P2) = N × spread → GARANTI
-
-        Tek kural: pair cost < $1 oldugu surece esit share al.
-        UP veya DN hangisi gelirse gelsin ayni kar.
-        """
-        # Volatilite bazli faz butcesi
-        budget_pct = self._phase_budget_pct()
-        phase_budget = self.budget * budget_pct
-        remaining_total = max(0, self.budget - self.portfolio.total_cost() - self.order_mgr.pending_notional())
-        available = min(phase_budget, remaining_total)
-        vol_label = "LOW" if budget_pct >= PHASE_BUDGET_LOW_VOL else "HIGH" if budget_pct <= PHASE_BUDGET_HIGH_VOL else "MID"
-
-        if available < 5.0:
-            self._log(f"FAZ {phase+1} AL | butce yetersiz ${available:.0f}")
+    async def _rebalance_if_needed(self, phase: int, time_left: float):
+        """Reversal hedefi aciksa eksik tarafi hizlica yetistir."""
+        del phase
+        if self._strategy_state != "ALIM" or not self._active_direction:
             return
 
-        # Orderbook
-        up_book = self.market_feed.get_book(self._current_asset_ids[0]) if self.market_feed else None
-        dn_book = self.market_feed.get_book(self._current_asset_ids[1]) if self.market_feed else None
-        up_bid = (up_book.best_bid or 0) if up_book else 0
-        dn_bid = (dn_book.best_bid or 0) if dn_book else 0
-
-        if up_bid <= 0 or dn_bid <= 0:
-            self._log(f"FAZ {phase+1} AL | bid fiyat yok")
+        if self._reversal_target_side != self._active_direction:
             return
 
-        # Fiyat korumasi: UP veya DN ¢89+ ise alim yapma
-        if up_bid >= 0.89 or dn_bid >= 0.89:
-            self._log(f"FAZ {phase+1} AL | ATLA ¢{max(up_bid,dn_bid)*100:.0f} >= ¢89")
+        weak_side = self._active_direction
+        weak_idx = self._index_for_side(weak_side)
+        catch_up_budget = max(0.0, self._reversal_target_cost - self._ledger_for_side(weak_side).total_cost)
+        if catch_up_budget < MIN_TRADE_BUDGET:
+            self._reversal_target_side = None
+            self._reversal_target_cost = 0.0
             return
 
-        pair_cost = up_bid + dn_bid
-        if pair_cost >= MAX_PAIR_COST:
-            self._log(f"FAZ {phase+1} AL | ATLA pair ¢{pair_cost*100:.0f} >= ¢100")
+        book = self.market_feed.get_book(self._current_asset_ids[weak_idx]) if self.market_feed else None
+        if not book or not book.best_bid:
+            return
+        bid = book.best_bid
+        if bid <= 0 or bid >= ORDERBOOK_STOP_PRICE:
             return
 
-        spread = 1.0 - pair_cost
-        spread_pct = spread / pair_cost * 100 if pair_cost > 0 else 0
+        remaining = self._remaining_budget()
+        rebalance_cost = min(catch_up_budget, remaining)
+        rebalance_cost = self._budget_fits_risk(weak_side, bid, rebalance_cost)
+        if rebalance_cost < MIN_EFFECTIVE_BUDGET:
+            return
 
-        # Derinlik filtresi
-        up_depth = self._orderbook_depth(up_book)
-        dn_depth = self._orderbook_depth(dn_book)
-
-        # ── ESIT SHARE hesabi ──
-        # N share = available / pair_cost
-        target_shares = available / pair_cost
-        up_cost = target_shares * up_bid
-        dn_cost = target_shares * dn_bid
-
-        # Derinlik limiti: share sayisini likiditie sinirla
-        max_shares_by_depth = min(
-            up_depth * DEPTH_MAX_RATIO if up_depth > 0 else 999,
-            dn_depth * DEPTH_MAX_RATIO if dn_depth > 0 else 999,
-        )
-        if target_shares > max_shares_by_depth and max_shares_by_depth > 5:
-            target_shares = max_shares_by_depth
-            up_cost = target_shares * up_bid
-            dn_cost = target_shares * dn_bid
-
-        # Risk on-kontrol
-        projected_loss = self._worst_case_after(up_cost, target_shares, dn_cost, target_shares)
-        if projected_loss >= MAX_LOSS_PCT:
-            scale = (MAX_LOSS_PCT - 1) / max(projected_loss, 0.01)
-            target_shares *= scale
-            up_cost = target_shares * up_bid
-            dn_cost = target_shares * dn_bid
-
-        # ESIT SHARE emir koy — her iki tarafa ayni share sayisi
-        up_placed = await self._maker_buy("UP", 0, up_bid, up_cost)
-        dn_placed = await self._maker_buy("DOWN", 1, dn_bid, dn_cost)
-        self._phase_spent[phase] = up_placed + dn_placed
-
-        guaranteed_profit = target_shares * spread
-        self._log(
-            f"FAZ {phase+1}/{NUM_PHASES} AL | {target_shares:.0f}sh x2 | vol:{vol_label} | "
-            f"UP ${up_placed:.0f}@¢{up_bid*100:.0f} DN ${dn_placed:.0f}@¢{dn_bid*100:.0f} | "
-            f"pair¢{pair_cost*100:.0f} spread¢{spread*100:.1f}(%{spread_pct:.1f}) | "
-            f"gar.kar:${guaranteed_profit:.1f} | risk%{self._worst_case_after(0,0,0,0):.1f} | {int(time_left)}s"
-        )
+        placed = await self._maker_buy(weak_side, weak_idx, bid, rebalance_cost)
+        if placed > 0:
+            self._log(
+                f"REBALANCE {weak_side} | hedef:${self._reversal_target_cost:.2f} | "
+                f"UP:${self.portfolio.up.total_cost:.2f} DN:${self.portfolio.down.total_cost:.2f} | "
+                f"+${placed:.2f}@¢{bid*100:.0f} | {int(time_left)}s"
+            )
 
     async def _maker_buy(self, side: str, idx: int, bid_price: float, budget: float) -> float:
         """Orderbook bid seviyelerine dagitarak maker BUY emirleri koy.
 
-        ¢89+ fiyattan emir GONDERMEZ.
+        ¢90+ fiyattan emir GONDERMEZ.
+        Maliyet bloklu taraf icin emir gondermez.
         """
-        if bid_price >= 0.89:
+        # Maliyet bloklama: agir tarafa emir gonderme
+        if self._cost_block_side == side:
             return 0.0
-        if budget < 2.5 or bid_price <= 0:
+
+        budget = min(budget, self._remaining_budget())
+        if bid_price >= ORDERBOOK_STOP_PRICE:
+            return 0.0
+        if budget < MIN_EFFECTIVE_BUDGET or bid_price <= 0:
             return 0.0
 
         book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
@@ -696,7 +1251,7 @@ class LimitBotStrategy:
 
         for level in levels:
             price = level.price
-            if price <= 0 or price >= 0.89:
+            if price <= 0 or price >= ORDERBOOK_STOP_PRICE:
                 continue
 
             remaining_budget = budget - total_placed
@@ -722,11 +1277,13 @@ class LimitBotStrategy:
                 total_placed += cost
                 self.stats["orders_sent"] += 1
 
+        self._record_phase_spend(total_placed)
         return total_placed
 
     async def _taker_buy(self, side: str, idx: int, ask_price: float, budget: float) -> float:
         """Best ask'tan taker BUY emri gonder. Harcanan tutari dondurur."""
-        if budget < 2.5 or ask_price <= 0 or ask_price >= 1.0:
+        budget = min(budget, self._remaining_budget())
+        if budget < MIN_EFFECTIVE_BUDGET or ask_price <= 0 or ask_price >= 1.0:
             return 0.0
 
         size = round(budget / ask_price, 1)
@@ -746,10 +1303,10 @@ class LimitBotStrategy:
 
         if order:
             # Taker emir aninda dolar — portfolio'ya kaydet
-            btc = self.btc_feed.current_price if self.btc_feed else 0
             ledger = self.portfolio.up if side == "UP" else self.portfolio.down
-            ledger.record_buy(ask_price, size, btc)
+            ledger.record_buy(ask_price, size, 0)
             self._archive_fill(side, ask_price, size, cost)
+            self._record_phase_spend(cost)
             self.stats["orders_sent"] += 1
             self.stats["fills"] += 1
             return cost
@@ -758,11 +1315,7 @@ class LimitBotStrategy:
     # ── Sinyal: start noktasindan sapma ───────────────────────────
 
     def _lock_izle_signal(self):
-        """IZLE fazinda toplanan 60s sinyal verisini kilitle.
-
-        60 saniye boyunca toplanan BTC change_pct orneklerinin ortalamasini alir.
-        Bu ortalama yon tayini icin kullanilir — anlik dalgalanmadan etkilenmez.
-        """
+        """IZLE fazinda toplanan orderbook yon skorunu kilitle."""
         if not self._izle_samples:
             self._izle_signal = SignalState.NEUTRAL
             self._izle_avg = 0.0
@@ -772,12 +1325,10 @@ class LimitBotStrategy:
         avg = sum(self._izle_samples) / len(self._izle_samples)
         self._izle_avg = avg
 
-        # Ortalama BTC-PTB farki yorumlama
-        # avg > +0.03 → BTC PTB'den yukarda → UP kazanir
-        # avg < -0.03 → BTC PTB'den asagida → DOWN kazanir
-        if avg > 0.03:
+        # Ortalama orderbook yon skoru yorumlama
+        if avg > 0.2:
             self._izle_signal = SignalState.STRONG_UP
-        elif avg < -0.03:
+        elif avg < -0.2:
             self._izle_signal = SignalState.STRONG_DOWN
         else:
             self._izle_signal = SignalState.NEUTRAL
@@ -786,92 +1337,47 @@ class LimitBotStrategy:
                     "DN" if self._izle_signal == SignalState.STRONG_DOWN else "—"
         self._log(
             f"IZLE SONUC | {len(self._izle_samples)} ornek | "
-            f"ort BTC-PTB: {avg:+.4f}% | YON: {direction}"
+            f"ort OB skoru: {avg:+.4f} | YON: {direction}"
         )
-
-    def _compute_signal_from_start(self, up_mid: float, dn_mid: float) -> str:
-        """BTC baslangic fiyatindan farka gore sinyal.
-
-        BTC current > start → yukseliyor → UP
-        BTC current < start → dususyor → DOWN
-        """
-        if not self.btc_feed or self.btc_feed.current_price <= 0 or self._start_btc_price <= 0:
-            return SignalState.NEUTRAL
-
-        diff_pct = (self.btc_feed.current_price - self._start_btc_price) / self._start_btc_price * 100
-
-        if diff_pct > 0.05:
-            return SignalState.STRONG_UP
-        elif diff_pct < -0.05:
-            return SignalState.STRONG_DOWN
-        return SignalState.NEUTRAL
-
-    # ── Dagitim: max %5 kayma ─────────────────────────────────────
-
-    def _compute_allocation(self, signal: str, up_price: float, dn_price: float) -> tuple[float, float]:
-        """Sinyal bazli butce dagitimi.
-
-        NEUTRAL: esit share (fiyat oranina gore)
-        STRONG_UP: butcenin %90'i UP'a, %10 DN'a (hedge)
-        STRONG_DOWN: butcenin %90'i DN'a, %10 UP'a (hedge)
-
-        Sinyal yonu gosteriyorsa o yone agirlikli al.
-        Zayif tarafa min %10 hedge — tamamen sifirlamak yerine ucuz hedge.
-
-        Ornek (STRONG_DOWN, UP ¢10, DN ¢90):
-          UP'a %10 = $10 → 100 share (ucuz hedge)
-          DN'a %90 = $90 → 100 share (guclu taraf)
-          DN kazanirsa: payout $100, cost $100, kar $0 + spread
-          UP kazanirsa: payout $100 (hedge), cost $100, kayip minimal
-        """
-        total = up_price + dn_price
-        if total <= 0:
-            return 0.5, 0.5
-
-        if signal == SignalState.NEUTRAL:
-            # Esit share: fiyat oranina gore
-            base_up = up_price / total
-            return base_up, 1.0 - base_up
-
-        # BTC direction'dan confidence al (0→1)
-        btc_dir = abs(self.btc_feed.direction) if self.btc_feed else 0.5
-        confidence = min(1.0, btc_dir)
-
-        # Confidence 0.3→ %70 guclu, 1.0→ %80 guclu (max %80, min %20 hedge)
-        strong_ratio = min(1.0 - HEDGE_MIN_RATIO, 0.60 + confidence * 0.20)
-        weak_ratio = max(HEDGE_MIN_RATIO, 1.0 - strong_ratio)
-        strong_ratio = 1.0 - weak_ratio
-
-        if signal == SignalState.STRONG_UP:
-            return strong_ratio, weak_ratio
-        else:  # STRONG_DOWN
-            return weak_ratio, strong_ratio
-
-    # ── Buy Side (hedge icin kullanilir) ─────────────────────────
-
-    async def _buy_side(self, side: str, budget: float, up_bid: float, dn_bid: float):
-        idx = 0 if side == "UP" else 1
-        bid = up_bid if side == "UP" else dn_bid
-        await self._maker_buy(side, idx, bid, budget)
 
     # ── Market Resolve ───────────────────────────────────────────
 
+    def _resolve_winner_from_orderbook(self) -> str:
+        """Kazanan tarafi sadece orderbook/trade verisinden tahmin et."""
+        up_p, dn_p = self._get_prices()
+        if up_p > 0 or dn_p > 0:
+            if up_p == dn_p:
+                if self._active_direction:
+                    return self._active_direction
+                return "UP"
+            return "UP" if up_p > dn_p else "DOWN"
+
+        if self.market_feed and self._current_asset_ids:
+            up_trade = self.market_feed.last_trades.get(self._current_asset_ids[0])
+            dn_trade = self.market_feed.last_trades.get(self._current_asset_ids[1])
+            up_last = up_trade.price if up_trade else 0.0
+            dn_last = dn_trade.price if dn_trade else 0.0
+            if up_last > 0 or dn_last > 0:
+                return "UP" if up_last >= dn_last else "DOWN"
+
+        if self._active_direction:
+            return self._active_direction
+        sig_dir = self._signal_to_direction()
+        if sig_dir:
+            return sig_dir
+        return "UP" if self.portfolio.up.shares >= self.portfolio.down.shares else "DOWN"
+
     async def _resolve_market(self):
-        self._log("Market kapaniyor...")
+        self._log("Market kapandi...")
 
         up_sh = self.portfolio.up.shares
         dn_sh = self.portfolio.down.shares
         paired = min(up_sh, dn_sh)
 
-        btc_close = self.btc_feed.current_price if self.btc_feed else 0
-        start_price = self._start_btc_price
-        if btc_close > 0 and start_price > 0:
-            winner = "UP" if btc_close >= start_price else "DOWN"
-        else:
-            up_p, dn_p = self._get_prices()
-            winner = "UP" if up_p >= dn_p else "DOWN"
+        winner = self._resolve_winner_from_orderbook()
 
-        if self.portfolio.total_shares() > 0:
+        traded = self.portfolio.total_shares() > 0
+        if traded:
             res = self.portfolio.resolve_market(winner)
             pnl = res["resolved_pnl"]
             pnl_pct = (pnl / res["total_cost"] * 100) if res["total_cost"] > 0 else 0
@@ -883,21 +1389,28 @@ class LimitBotStrategy:
                 f"Maliyet:${res['total_cost']:.2f} | K/Z:${pnl:+.2f} (%{pnl_pct:+.1f})"
             )
 
-            snapshot = self.portfolio.snapshot_for_history(
-                question=self._market_question, winner=winner,
-                btc_close=btc_close, ptb=start_price,
-            )
-            snapshot["ticks"] = self._tick_count
-            snapshot["paired"] = paired
-            self.market_history.append(snapshot)
-            self._save_history()
-
-            cumulative = sum(h.get("resolved_pnl", 0) for h in self.market_history)
-            total = len(self.market_history)
-            wins = sum(1 for h in self.market_history if h.get("resolved_pnl", 0) > 0)
-            self._log(f"#{total} | Bu:${pnl:+.2f} | Toplam:${cumulative:+.2f} | Kazanma:{wins}/{total}")
         else:
-            self._log("Islem yok — %3 spread bulunamadi")
+            self._log("Islem yok — uygun sinyal/risk penceresi bulunamadi")
+
+        snapshot = self.portfolio.snapshot_for_history(
+            question=self._market_question, winner=winner,
+            btc_close=0, ptb=0,
+        )
+        snapshot["ticks"] = self._tick_count
+        snapshot["paired"] = paired
+        snapshot["traded"] = traded
+        snapshot["budget_open"] = round(self._market_budget, 2)
+        snapshot["budget"] = round(self._budget_cap(), 2)
+        self.market_history.append(snapshot)
+        self._save_history()
+
+        cumulative = sum(h.get("resolved_pnl", 0) for h in self.market_history)
+        total = len(self.market_history)
+        wins = sum(1 for h in self.market_history if h.get("resolved_pnl", 0) > 0)
+        self._log(
+            f"HISTORY KAYIT | #{total} | {'TRADE' if traded else 'NO TRADE'} | "
+            f"Bu:${snapshot.get('resolved_pnl', 0):+.2f} | Toplam:${cumulative:+.2f} | Kazanma:{wins}/{total}"
+        )
 
         self.bot_active = False
         await self.order_mgr.cancel_all()
@@ -921,7 +1434,6 @@ class LimitBotStrategy:
             return
         is_up = (asset_id == self._current_asset_ids[0]) if self._current_asset_ids else True
         ledger = self.portfolio.up if is_up else self.portfolio.down
-        btc = self.btc_feed.current_price if self.btc_feed else 0
         tok = "UP" if is_up else "DOWN"
 
         # Kalan trade boyutunu emirlere sırayla dağıt
@@ -970,7 +1482,7 @@ class LimitBotStrategy:
             if order.side != OrderSide.BUY:
                 continue
 
-            ledger.record_buy(order.price, fill_qty, btc)
+            ledger.record_buy(order.price, fill_qty, 0)
             self._archive_fill(tok, order.price, fill_qty, order.price * fill_qty)
             t = "YKR" if is_up else "ASG"
             self._log(f"DOLUM {t} {fill_qty:.0f}sh @¢{order.price*100:.0f}")

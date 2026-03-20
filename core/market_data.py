@@ -1,6 +1,7 @@
 """WebSocket-based market data handler for Polymarket CLOB."""
 
 import asyncio
+import contextlib
 import json
 import ssl
 import time
@@ -13,6 +14,11 @@ import websockets
 from utils.logger import setup_logger
 
 log = setup_logger("market_data")
+
+RX_STALE_SEC = 15.0
+BOOK_STALE_SEC = 45.0
+WATCHDOG_POLL_SEC = 2.0
+TRADE_LOG_INTERVAL = 250
 
 
 @dataclass
@@ -64,6 +70,10 @@ class MarketDataFeed:
         self.asset_ids = asset_ids
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
+        self._last_rx_ts: float = 0.0
+        self._last_book_ts: float = 0.0
+        self._last_book_by_asset: dict[str, float] = {aid: 0.0 for aid in asset_ids}
+        self._trade_count = 0
 
         # State per asset_id
         self.order_books: dict[str, OrderBook] = {
@@ -90,6 +100,10 @@ class MarketDataFeed:
             try:
                 async with websockets.connect(self.ws_url, ssl=ssl_ctx) as ws:
                     self._ws = ws
+                    now = time.monotonic()
+                    self._last_rx_ts = now
+                    self._last_book_ts = now
+                    self._last_book_by_asset = {aid: now for aid in self.asset_ids}
                     log.info("WebSocket connected to %s", self.ws_url)
 
                     # Subscribe to market channels
@@ -104,10 +118,17 @@ class MarketDataFeed:
 
                     # Start ping task and message loop
                     ping_task = asyncio.create_task(self._ping_loop(ws))
+                    watchdog_task = asyncio.create_task(self._watchdog_loop(ws))
                     try:
                         await self._message_loop(ws)
                     finally:
                         ping_task.cancel()
+                        watchdog_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await ping_task
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await watchdog_task
+                        self._ws = None
 
             except websockets.ConnectionClosed as e:
                 log.warning("WebSocket disconnected: %s. Reconnecting in 2s...", e)
@@ -127,9 +148,43 @@ class MarketDataFeed:
             except Exception:
                 break
 
+    async def _watchdog_loop(self, ws):
+        """Reconnect if the socket goes silent or book updates stall."""
+        while True:
+            try:
+                await asyncio.sleep(WATCHDOG_POLL_SEC)
+                now = time.monotonic()
+                rx_idle = now - self._last_rx_ts
+                if rx_idle > RX_STALE_SEC:
+                    log.warning("No market WS messages for %.1fs. Reconnecting...", rx_idle)
+                    await ws.close()
+                    break
+
+                book_idle = now - self._last_book_ts
+                if book_idle > BOOK_STALE_SEC:
+                    stale_assets = [
+                        aid[:8]
+                        for aid, ts in self._last_book_by_asset.items()
+                        if now - ts > BOOK_STALE_SEC
+                    ]
+                    if stale_assets:
+                        log.warning(
+                            "No book updates for %.1fs on %s. Reconnecting...",
+                            book_idle,
+                            ",".join(stale_assets),
+                        )
+                        await ws.close()
+                        break
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error("Watchdog error: %s", e)
+                break
+
     async def _message_loop(self, ws):
         """Process incoming WebSocket messages."""
         async for raw_msg in ws:
+            self._last_rx_ts = time.monotonic()
             if raw_msg == "PONG":
                 continue
 
@@ -168,6 +223,7 @@ class MarketDataFeed:
 
         book = self.order_books[asset_id]
         now = time.time()
+        mono_now = time.monotonic()
 
         # Parse bids and asks
         bids_raw = msg.get("bids", [])
@@ -183,6 +239,8 @@ class MarketDataFeed:
             key=lambda x: x.price,
         )
         book.timestamp = now
+        self._last_book_ts = mono_now
+        self._last_book_by_asset[asset_id] = mono_now
 
         log.debug(
             "Book snapshot %s: bid=%s ask=%s mid=%s",
@@ -206,6 +264,7 @@ class MarketDataFeed:
         size = float(msg.get("size", 0))
         side = msg.get("side", "").upper()
         now = time.time()
+        mono_now = time.monotonic()
 
         if side == "BUY":
             levels = book.bids
@@ -237,6 +296,8 @@ class MarketDataFeed:
                 book.asks = sorted(levels, key=lambda x: x.price)
 
         book.timestamp = now
+        self._last_book_ts = mono_now
+        self._last_book_by_asset[asset_id] = mono_now
 
         if self._on_book_update:
             self._on_book_update(asset_id, book)
@@ -251,14 +312,23 @@ class MarketDataFeed:
             timestamp=time.time(),
         )
         self.last_trades[asset_id] = trade
-
-        log.info(
-            "Trade %s: %s %.2f @ %.4f",
-            asset_id[:8],
-            trade.side,
-            trade.size,
-            trade.price,
-        )
+        self._trade_count += 1
+        if self._trade_count % TRADE_LOG_INTERVAL == 0:
+            log.info(
+                "Trades streamed: %d | last %s %s @ %.4f",
+                self._trade_count,
+                asset_id[:8],
+                trade.side,
+                trade.price,
+            )
+        else:
+            log.debug(
+                "Trade %s: %s %.2f @ %.4f",
+                asset_id[:8],
+                trade.side,
+                trade.size,
+                trade.price,
+            )
 
         if self._on_trade:
             self._on_trade(asset_id, trade)
