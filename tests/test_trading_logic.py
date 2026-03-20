@@ -1,3 +1,4 @@
+import asyncio
 import time
 import warnings
 import unittest
@@ -645,6 +646,62 @@ class CostBalanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item["budget_open"], 1000.0)
         self.assertEqual(item["budget"], 1000.0)
 
+    async def test_resolve_market_cleanup_uses_captured_runtime_refs(self):
+        """Eski market cleanup'i yeni session referanslarini ezmemeli."""
+        strategy = TestStrategy(BotConfig())
+        strategy.bot_active = True
+        strategy._market_question = "Race market"
+        strategy.budget = 1000.0
+        strategy._market_budget = 1000.0
+        strategy._tick_count = 7
+        strategy._active_direction = "UP"
+
+        class DummyTracker:
+            def __init__(self):
+                self.stopped = False
+
+            async def stop(self):
+                self.stopped = True
+
+        class DummyFeed:
+            def __init__(self):
+                self.disconnected = False
+                self.last_trades = {}
+
+            def get_book(self, aid):
+                del aid
+                return None
+
+            async def disconnect(self):
+                self.disconnected = True
+
+        old_tracker = DummyTracker()
+        new_tracker = DummyTracker()
+        old_feed = DummyFeed()
+        new_feed = DummyFeed()
+        old_ws_task = asyncio.create_task(asyncio.sleep(3600))
+
+        strategy.signal_tracker = old_tracker
+        strategy.market_feed = old_feed
+        strategy._ws_task = old_ws_task
+
+        async def swap_runtime():
+            strategy.signal_tracker = new_tracker
+            strategy.market_feed = new_feed
+            return 0
+
+        strategy.order_mgr.cancel_all = swap_runtime
+
+        await strategy._resolve_market()
+
+        self.assertTrue(old_tracker.stopped)
+        self.assertTrue(old_feed.disconnected)
+        self.assertTrue(old_ws_task.cancelled())
+        self.assertIs(strategy.signal_tracker, new_tracker)
+        self.assertIs(strategy.market_feed, new_feed)
+        self.assertFalse(new_tracker.stopped)
+        self.assertFalse(new_feed.disconnected)
+
     async def test_market_budget_cap_tracks_dynamic_input(self):
         """UI butcesi degistiginde kalan toplam spend cap'i de aninda degismeli."""
         strategy = TestStrategy(BotConfig())
@@ -698,6 +755,51 @@ class CostBalanceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(strategy._direction_confirm_secs("DOWN"), 1.0)
+
+    async def test_opposite_signal_pauses_old_direction_buy_immediately(self):
+        """Ters sinyal gelir gelmez eski yone ek alim durmali."""
+        strategy = TestStrategy(BotConfig())
+        strategy._active_direction = "DOWN"
+        strategy._direction_since = time.time() - 5
+
+        paused = strategy._update_active_direction("UP", time.time())
+
+        self.assertTrue(paused)
+        self.assertEqual(strategy._active_direction, "DOWN")
+        self.assertEqual(strategy._pending_direction, "UP")
+
+    async def test_opposite_signal_flips_after_confirmation_window(self):
+        """Teyit penceresi dolunca yeni yone gecilip reversal hedefi kurulmalı."""
+        strategy = TestStrategy(BotConfig())
+        strategy.portfolio.down.record_buy(0.60, 100)  # $60
+        strategy.portfolio.up.record_buy(0.50, 30)     # $15
+        strategy._active_direction = "DOWN"
+        strategy.signal_tracker = FakeSignalTracker(
+            SignalSnapshot(
+                ts=time.time(),
+                up_mid=0.70,
+                dn_mid=0.30,
+                spread_pct=40.0,
+                raw_signal=SignalState.STRONG_UP,
+                confirmed=SignalState.NEUTRAL,
+                confidence=0.90,
+                phase=0,
+                rapid_move=True,
+                edge_score=0.15,
+                persistence=0.80,
+            )
+        )
+
+        t0 = time.time()
+        self.assertTrue(strategy._update_active_direction("UP", t0))
+
+        paused = strategy._update_active_direction("UP", t0 + 1.1)
+
+        self.assertFalse(paused)
+        self.assertEqual(strategy._active_direction, "UP")
+        self.assertEqual(strategy._direction_changes, 1)
+        self.assertEqual(strategy._reversal_target_side, "UP")
+        self.assertAlmostEqual(strategy._reversal_target_cost, 60.0, places=2)
 
     async def test_planned_budget_grows_with_signal_strength(self):
         """Guclu orderbook sinyali ayni fazda daha agresif butce acmali."""

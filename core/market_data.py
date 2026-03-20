@@ -346,6 +346,36 @@ class MarketDataFeed:
             await self._ws.close()
             log.info("WebSocket disconnected")
 
+    def health(self) -> dict:
+        """Summarize feed health for the dashboard."""
+        now = time.monotonic()
+        rx_age = now - self._last_rx_ts if self._last_rx_ts else None
+        book_age = now - self._last_book_ts if self._last_book_ts else None
+        stale_assets = []
+        if self._last_book_by_asset:
+            stale_assets = [
+                aid[:8]
+                for aid, ts in self._last_book_by_asset.items()
+                if ts and (now - ts) > BOOK_STALE_SEC
+            ]
+
+        if not self._running:
+            status = "offline"
+        elif self._ws is None:
+            status = "reconnecting"
+        elif (rx_age and rx_age > RX_STALE_SEC) or stale_assets:
+            status = "stale"
+        else:
+            status = "live"
+
+        return {
+            "status": status,
+            "ws_connected": self._ws is not None,
+            "rx_age_sec": round(rx_age, 1) if rx_age is not None else None,
+            "book_age_sec": round(book_age, 1) if book_age is not None else None,
+            "stale_assets": stale_assets,
+        }
+
     def get_book(self, asset_id: str) -> Optional[OrderBook]:
         return self.order_books.get(asset_id)
 

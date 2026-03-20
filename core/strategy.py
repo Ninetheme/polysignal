@@ -9,6 +9,7 @@ Kural:
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -172,6 +173,79 @@ class LimitBotStrategy:
             return None
         return loop.create_task(coro)
 
+    def _lifecycle_lock(self) -> asyncio.Lock:
+        """Create the lifecycle lock lazily inside the active event loop."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    def _has_runtime_refs(self) -> bool:
+        return any((
+            self.market_feed,
+            self.signal_tracker,
+            self._ws_task,
+            self._monitor_task,
+            self._btc_ws_task,
+            self._heartbeat_task,
+        ))
+
+    def _capture_runtime_refs(self, include_monitor: bool) -> dict:
+        """Detach live runtime objects so cleanup cannot clobber a newer session."""
+        refs = {
+            "signal_tracker": self.signal_tracker,
+            "market_feed": self.market_feed,
+            "ws_task": self._ws_task,
+            "monitor_task": self._monitor_task if include_monitor else None,
+            "btc_ws_task": self._btc_ws_task,
+            "heartbeat_task": self._heartbeat_task,
+        }
+        self.signal_tracker = None
+        self.market_feed = None
+        self._ws_task = None
+        self._monitor_task = None
+        self._btc_ws_task = None
+        self._heartbeat_task = None
+        self.btc_feed = None
+        self._signal_state = SignalState.NEUTRAL
+        return refs
+
+    async def _cancel_task(self, task: Optional[asyncio.Task]):
+        if not task or task.done() or task is asyncio.current_task():
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    async def _stop_runtime_refs(self, refs: dict):
+        """Stop detached runtime objects captured from the active session."""
+        signal_tracker = refs.get("signal_tracker")
+        market_feed = refs.get("market_feed")
+
+        if signal_tracker:
+            stopper = getattr(signal_tracker, "stop", None)
+            if stopper:
+                result = stopper()
+                if asyncio.iscoroutine(result):
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await result
+
+        self.limit_engine.cancel_active()
+        await self.order_mgr.cancel_all()
+        self.order_mgr.stop_heartbeat()
+
+        if market_feed:
+            disconnect = getattr(market_feed, "disconnect", None)
+            if disconnect:
+                result = disconnect()
+                if asyncio.iscoroutine(result):
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await result
+
+        await self._cancel_task(refs.get("ws_task"))
+        await self._cancel_task(refs.get("monitor_task"))
+        await self._cancel_task(refs.get("btc_ws_task"))
+        await self._cancel_task(refs.get("heartbeat_task"))
+
     def _budget_cap(self) -> float:
         return self.budget
 
@@ -334,106 +408,94 @@ class LimitBotStrategy:
     # ── Start ────────────────────────────────────────────────────
 
     async def _start(self):
-        if self.bot_active:
-            return
-
-        now = int(time.time())
-        current_window = now - (now % 300)
-        mi = self.scanner._fetch_market(current_window) or self.scanner._fetch_market(current_window + 300)
-        if not mi:
-            self._log("HATA: Market bulunamadi!")
-            return
-
-        time_left = float(mi.get("end_time", 0) or 0) - time.time()
-        if time_left < MIN_MARKET_TIME_LEFT:
-            next_market = self.scanner._fetch_market(current_window + 300)
-            next_time_left = float(next_market.get("end_time", 0) or 0) - time.time() if next_market else 0.0
-            if next_market and next_time_left >= MIN_MARKET_TIME_LEFT:
-                mi = next_market
-            else:
-                self._log(
-                    f"Market gec acildi ({int(max(0, time_left))}s kaldi) — sonraki pencere bekleniyor"
-                )
+        async with self._lifecycle_lock():
+            if self.bot_active:
                 return
 
-        self._current_asset_ids = [mi["up_token_id"], mi["down_token_id"]]
-        self._market_end_time = mi.get("end_time", 0)
-        self._market_question = mi.get("question", "")
-        self._market_budget = self.budget
-        self.order_mgr.tick_size = mi.get("tick_size", 0.01)
+            if self._has_runtime_refs():
+                refs = self._capture_runtime_refs(include_monitor=True)
+                await self._stop_runtime_refs(refs)
 
-        self.scanner.price_to_beat = 0.0
-        self._start_btc_price = 0.0
+            now = int(time.time())
+            current_window = now - (now % 300)
+            mi = self.scanner._fetch_market(current_window) or self.scanner._fetch_market(current_window + 300)
+            if not mi:
+                self._log("HATA: Market bulunamadi!")
+                return
 
-        self._log(f"Market: {self._market_question}")
-        self._log("Referans: ORDERBOOK ONLY")
+            time_left = float(mi.get("end_time", 0) or 0) - time.time()
+            if time_left < MIN_MARKET_TIME_LEFT:
+                next_market = self.scanner._fetch_market(current_window + 300)
+                next_time_left = float(next_market.get("end_time", 0) or 0) - time.time() if next_market else 0.0
+                if next_market and next_time_left >= MIN_MARKET_TIME_LEFT:
+                    mi = next_market
+                else:
+                    self._log(
+                        f"Market gec acildi ({int(max(0, time_left))}s kaldi) — sonraki pencere bekleniyor"
+                    )
+                    return
 
-        self.portfolio = PaperPortfolio()
-        self.portfolio.budget = self.budget
-        self.limit_engine.portfolio = self.portfolio
-        self.order_mgr.active_orders.clear()
-        self._spent = 0.0
-        self._tick_count = 0
-        self._risk_sell_triggered = False
-        self._cost_rebalance_triggered = False
-        self._cost_block_side = None
-        self._reversal_target_side = None
-        self._reversal_target_cost = 0.0
-        self._orderbook_stop_hit = False
-        self._orderbook_stop_side = None
-        self._cheap_take_fired = set()
+            self._current_asset_ids = [mi["up_token_id"], mi["down_token_id"]]
+            self._market_end_time = mi.get("end_time", 0)
+            self._market_question = mi.get("question", "")
+            self._market_budget = self.budget
+            self.order_mgr.tick_size = mi.get("tick_size", 0.01)
 
-        self.market_feed = MarketDataFeed(
-            ws_url=self.config.polymarket.ws_market_url,
-            asset_ids=self._current_asset_ids,
-        )
-        self.market_feed.on_trade(self._on_trade)
-        book_getter = lambda aid: self.market_feed.get_book(aid) if self.market_feed else None
-        self.limit_engine.set_book_getter(book_getter)
+            self.scanner.price_to_beat = 0.0
+            self._start_btc_price = 0.0
 
-        # Signal tracker baslat (200ms = 5x/s, 10 faz x 30s)
-        self.signal_tracker = SignalTracker(book_getter)
-        self.signal_tracker.configure(self._current_asset_ids[0], self._current_asset_ids[1])
-        self.signal_tracker.on_signal(self._on_signal_change)
-        self.signal_tracker.on_hedge(self._on_hedge_request)
-        self._signal_state = SignalState.NEUTRAL
+            self._log(f"Market: {self._market_question}")
+            self._log("Referans: ORDERBOOK ONLY")
 
-        self.bot_active = True
-        self._ws_task = asyncio.create_task(self.market_feed.connect())
-        asyncio.create_task(self.signal_tracker.start())
-        self._monitor_task = asyncio.create_task(self._main_loop())
-        # Heartbeat: production modda emirleri canlı tutar
-        if not self.order_mgr.test_mode and not self._heartbeat_task:
-            self._heartbeat_task = asyncio.create_task(
-                self.order_mgr.start_heartbeat(self.config.risk.heartbeat_interval_sec))
-        self.stats["markets_traded"] += 1
+            self.portfolio = PaperPortfolio()
+            self.portfolio.budget = self.budget
+            self.limit_engine.portfolio = self.portfolio
+            self.order_mgr.active_orders.clear()
+            self._spent = 0.0
+            self._tick_count = 0
+            self._risk_sell_triggered = False
+            self._cost_rebalance_triggered = False
+            self._cost_block_side = None
+            self._reversal_target_side = None
+            self._reversal_target_cost = 0.0
+            self._orderbook_stop_hit = False
+            self._orderbook_stop_side = None
+            self._cheap_take_fired = set()
+
+            self.market_feed = MarketDataFeed(
+                ws_url=self.config.polymarket.ws_market_url,
+                asset_ids=self._current_asset_ids,
+            )
+            self.market_feed.on_trade(self._on_trade)
+            book_getter = lambda aid: self.market_feed.get_book(aid) if self.market_feed else None
+            self.limit_engine.set_book_getter(book_getter)
+
+            # Signal tracker baslat (200ms = 5x/s, 10 faz x 30s)
+            self.signal_tracker = SignalTracker(book_getter)
+            self.signal_tracker.configure(self._current_asset_ids[0], self._current_asset_ids[1])
+            self.signal_tracker.on_signal(self._on_signal_change)
+            self.signal_tracker.on_hedge(self._on_hedge_request)
+            self._signal_state = SignalState.NEUTRAL
+
+            self.bot_active = True
+            self._ws_task = asyncio.create_task(self.market_feed.connect())
+            await self.signal_tracker.start()
+            self._monitor_task = asyncio.create_task(self._main_loop())
+            # Heartbeat: production modda emirleri canlı tutar
+            if not self.order_mgr.test_mode and not self._heartbeat_task:
+                self._heartbeat_task = asyncio.create_task(
+                    self.order_mgr.start_heartbeat(self.config.risk.heartbeat_interval_sec))
+            self.stats["markets_traded"] += 1
 
     async def _disconnect(self):
-        if not self.bot_active:
-            return
-        self.bot_active = False
-        if self.signal_tracker:
-            await self.signal_tracker.stop()
-            self.signal_tracker = None
-        self.limit_engine.cancel_active()
-        await self.order_mgr.cancel_all()
-        self.order_mgr.stop_heartbeat()
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            self._heartbeat_task = None
-        if self._monitor_task:
-            self._monitor_task.cancel()
-        if self._ws_task:
-            self._ws_task.cancel()
-        if self._btc_ws_task:
-            self._btc_ws_task.cancel()
-            self._btc_ws_task = None
-            self.btc_feed = None
-        if self.market_feed:
-            await self.market_feed.disconnect()
-            self.market_feed = None
-        self._market_budget = 0.0
-        self._log("Durduruldu.")
+        async with self._lifecycle_lock():
+            if not self.bot_active and not self._has_runtime_refs():
+                return
+            self.bot_active = False
+            refs = self._capture_runtime_refs(include_monitor=True)
+            await self._stop_runtime_refs(refs)
+            self._market_budget = 0.0
+            self._log("Durduruldu.")
 
     # ── Signal callback ───────────────────────────────────────────
 
@@ -569,31 +631,9 @@ class LimitBotStrategy:
                             await self._ai_tick(current_dir, time_left, elapsed)
                         else:
                             # Fallback: kural bazli strateji
-                            if not self._active_direction and current_dir:
-                                self._active_direction = current_dir
-                                self._direction_since = now
-                                self._log(f"YON AKTIFLESTI: {current_dir}")
+                            pause_for_reversal = self._update_active_direction(current_dir, now)
 
-                            # Yon degisimi kontrolu (3s onay)
-                            if current_dir and current_dir != self._active_direction:
-                                if self._pending_direction != current_dir:
-                                    self._pending_direction = current_dir
-                                    self._pending_since = now
-                                elif now - self._pending_since >= self._direction_confirm_secs(current_dir):
-                                    old_dir = self._active_direction
-                                    self._active_direction = current_dir
-                                    self._direction_since = now
-                                    self._direction_changes += 1
-                                    self._pending_direction = None
-                                    self._arm_reversal_target(old_dir, current_dir)
-                                    self._log(
-                                        f"YON DEGISTI: {old_dir} → {current_dir} | "
-                                        f"#{self._direction_changes} | reversal takip aktif"
-                                    )
-                            else:
-                                self._pending_direction = None
-
-                            if self._active_direction:
+                            if self._active_direction and not pause_for_reversal:
                                 await self._buy_in_direction(self._active_direction, time_left)
 
                 elif self._strategy_state == "BEKLE":
@@ -676,6 +716,51 @@ class LimitBotStrategy:
         self._strategy_state = "ALIM"
         prefix = "ERKEN GIRIS" if early else "REFERANS YON"
         self._log(f"{prefix}: {direction} | takipli alim basliyor")
+
+    def _update_active_direction(self, current_dir: Optional[str], now: float) -> bool:
+        """Track direction changes and pause buying while reversal is confirming.
+
+        Returns True when opposite-direction evidence exists and the bot should
+        stop adding to the old side for this tick.
+        """
+        if not self._active_direction and current_dir:
+            self._active_direction = current_dir
+            self._direction_since = now
+            self._pending_direction = None
+            self._log(f"YON AKTIFLESTI: {current_dir}")
+            return False
+
+        if not current_dir:
+            self._pending_direction = None
+            return False
+
+        if current_dir == self._active_direction:
+            self._pending_direction = None
+            return False
+
+        if self._pending_direction != current_dir:
+            self._pending_direction = current_dir
+            self._pending_since = now
+            self._log(
+                f"TERS SINYAL: {self._active_direction} → {current_dir} | "
+                "teyit bekleniyor, eski yone alim duraklatildi"
+            )
+            return True
+
+        if now - self._pending_since < self._direction_confirm_secs(current_dir):
+            return True
+
+        old_dir = self._active_direction
+        self._active_direction = current_dir
+        self._direction_since = now
+        self._direction_changes += 1
+        self._pending_direction = None
+        self._arm_reversal_target(old_dir, current_dir)
+        self._log(
+            f"YON DEGISTI: {old_dir} → {current_dir} | "
+            f"#{self._direction_changes} | reversal takip aktif"
+        )
+        return False
 
     def _entry_wait_secs(self, direction: str) -> float:
         snap = self._latest_signal_snapshot()
@@ -1368,57 +1453,54 @@ class LimitBotStrategy:
         return "UP" if self.portfolio.up.shares >= self.portfolio.down.shares else "DOWN"
 
     async def _resolve_market(self):
-        self._log("Market kapandi...")
+        async with self._lifecycle_lock():
+            self._log("Market kapandi...")
 
-        up_sh = self.portfolio.up.shares
-        dn_sh = self.portfolio.down.shares
-        paired = min(up_sh, dn_sh)
+            up_sh = self.portfolio.up.shares
+            dn_sh = self.portfolio.down.shares
+            paired = min(up_sh, dn_sh)
 
-        winner = self._resolve_winner_from_orderbook()
+            winner = self._resolve_winner_from_orderbook()
 
-        traded = self.portfolio.total_shares() > 0
-        if traded:
-            res = self.portfolio.resolve_market(winner)
-            pnl = res["resolved_pnl"]
-            pnl_pct = (pnl / res["total_cost"] * 100) if res["total_cost"] > 0 else 0
-            w_tr = "YUKARI" if winner == "UP" else "ASAGI"
+            traded = self.portfolio.total_shares() > 0
+            if traded:
+                res = self.portfolio.resolve_market(winner)
+                pnl = res["resolved_pnl"]
+                pnl_pct = (pnl / res["total_cost"] * 100) if res["total_cost"] > 0 else 0
+                w_tr = "YUKARI" if winner == "UP" else "ASAGI"
 
-            self._log(f"━━ {w_tr} KAZANDI ━━")
+                self._log(f"━━ {w_tr} KAZANDI ━━")
+                self._log(
+                    f"Cift:{paired:.0f} | Odeme:${res['payout']:.2f} | "
+                    f"Maliyet:${res['total_cost']:.2f} | K/Z:${pnl:+.2f} (%{pnl_pct:+.1f})"
+                )
+
+            else:
+                self._log("Islem yok — uygun sinyal/risk penceresi bulunamadi")
+
+            snapshot = self.portfolio.snapshot_for_history(
+                question=self._market_question, winner=winner,
+                btc_close=0, ptb=0,
+            )
+            snapshot["ticks"] = self._tick_count
+            snapshot["paired"] = paired
+            snapshot["traded"] = traded
+            snapshot["budget_open"] = round(self._market_budget, 2)
+            snapshot["budget"] = round(self._budget_cap(), 2)
+            self.market_history.append(snapshot)
+            self._save_history()
+
+            cumulative = sum(h.get("resolved_pnl", 0) for h in self.market_history)
+            total = len(self.market_history)
+            wins = sum(1 for h in self.market_history if h.get("resolved_pnl", 0) > 0)
             self._log(
-                f"Cift:{paired:.0f} | Odeme:${res['payout']:.2f} | "
-                f"Maliyet:${res['total_cost']:.2f} | K/Z:${pnl:+.2f} (%{pnl_pct:+.1f})"
+                f"HISTORY KAYIT | #{total} | {'TRADE' if traded else 'NO TRADE'} | "
+                f"Bu:${snapshot.get('resolved_pnl', 0):+.2f} | Toplam:${cumulative:+.2f} | Kazanma:{wins}/{total}"
             )
 
-        else:
-            self._log("Islem yok — uygun sinyal/risk penceresi bulunamadi")
-
-        snapshot = self.portfolio.snapshot_for_history(
-            question=self._market_question, winner=winner,
-            btc_close=0, ptb=0,
-        )
-        snapshot["ticks"] = self._tick_count
-        snapshot["paired"] = paired
-        snapshot["traded"] = traded
-        snapshot["budget_open"] = round(self._market_budget, 2)
-        snapshot["budget"] = round(self._budget_cap(), 2)
-        self.market_history.append(snapshot)
-        self._save_history()
-
-        cumulative = sum(h.get("resolved_pnl", 0) for h in self.market_history)
-        total = len(self.market_history)
-        wins = sum(1 for h in self.market_history if h.get("resolved_pnl", 0) > 0)
-        self._log(
-            f"HISTORY KAYIT | #{total} | {'TRADE' if traded else 'NO TRADE'} | "
-            f"Bu:${snapshot.get('resolved_pnl', 0):+.2f} | Toplam:${cumulative:+.2f} | Kazanma:{wins}/{total}"
-        )
-
-        self.bot_active = False
-        await self.order_mgr.cancel_all()
-        if self._ws_task:
-            self._ws_task.cancel()
-        if self.market_feed:
-            await self.market_feed.disconnect()
-            self.market_feed = None
+            self.bot_active = False
+            refs = self._capture_runtime_refs(include_monitor=False)
+            await self._stop_runtime_refs(refs)
 
     # ── Sell (devre disi — buy-only bot) ──────────────────────────
 

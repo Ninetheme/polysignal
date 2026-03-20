@@ -49,7 +49,9 @@ class DashboardServer:
         s = self.strategy
         now = time.time()
         books = {}
+        feed_state = {"status": "offline", "ws_connected": False, "rx_age_sec": None, "book_age_sec": None, "stale_assets": []}
         if s.market_feed:
+            feed_state = s.market_feed.health()
             for aid in s._current_asset_ids:
                 book = s.market_feed.get_book(aid)
                 if book:
@@ -119,6 +121,7 @@ class DashboardServer:
             "realized_pnl": pf["realized_pnl"],
             "loss_pct": loss["loss_pct"], "loss_exceeded": loss["exceeded"],
             "books": books,
+            "feed": feed_state,
             "orders": [
                 {"id": o.order_id, "asset": o.asset_id[:12], "side": o.side.value,
                  "price": o.price, "size": o.size,
@@ -293,6 +296,10 @@ body { background: #080c14; }
       <span id="cDot" class="w-2 h-2 rounded-full bg-red-500"></span>
       <span id="cLbl" class="text-slate-400">Baglanti yok</span>
     </span>
+    <span class="flex items-center gap-1.5">
+      <span id="feedDot" class="w-2 h-2 rounded-full bg-slate-600"></span>
+      <span id="feedLbl" class="text-slate-400">Feed yok</span>
+    </span>
   </div>
 </header>
 
@@ -413,7 +420,10 @@ body { background: #080c14; }
 
     <!-- Orderbook -->
     <div class="bg-base-card border border-brd rounded-xl flex-1 min-h-0 flex flex-col">
-      <div class="px-5 py-2.5 border-b border-brd text-[10px] font-bold uppercase tracking-widest text-slate-500">Emir Defteri</div>
+      <div class="px-5 py-2.5 border-b border-brd flex items-center justify-between gap-3">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Emir Defteri</span>
+        <span id="feedMeta" class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Feed bekleniyor</span>
+      </div>
       <div class="p-4 overflow-y-auto flex-1">
         <div class="grid grid-cols-2 gap-4">
           <div>
@@ -558,6 +568,40 @@ function sendCmd(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
 function render(d){
   $('mktLabel').textContent=d.market_question||'Baglanmadi';
   $('busyLabel').className=d.busy?'px-2 py-0.5 bg-amber-500 text-black rounded text-[10px] font-bold uppercase':'hidden';
+
+  const feed=d.feed||{};
+  const feedStatus=feed.status||'offline';
+  const feedRx=feed.rx_age_sec;
+  const feedBook=feed.book_age_sec;
+  const staleAssets=feed.stale_assets||[];
+  const feedDot=$('feedDot');
+  const feedLbl=$('feedLbl');
+  const feedMeta=$('feedMeta');
+  if(feedStatus==='live'){
+    feedDot.className='w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_theme(colors.emerald.400)]';
+    feedLbl.textContent='Feed canli';
+    feedLbl.className='text-emerald-400';
+    feedMeta.textContent='Son book '+(feedBook!=null?feedBook.toFixed(1)+'s':'—');
+    feedMeta.className='text-[10px] font-semibold uppercase tracking-wider text-emerald-400';
+  }else if(feedStatus==='stale'){
+    feedDot.className='w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_theme(colors.amber.400)]';
+    feedLbl.textContent='Feed stale';
+    feedLbl.className='text-amber-400';
+    feedMeta.textContent=staleAssets.length?'Stale '+staleAssets.join(','):'Rx '+(feedRx!=null?feedRx.toFixed(1)+'s':'—');
+    feedMeta.className='text-[10px] font-semibold uppercase tracking-wider text-amber-400';
+  }else if(feedStatus==='reconnecting'){
+    feedDot.className='w-2 h-2 rounded-full bg-red-500';
+    feedLbl.textContent='Feed reconnect';
+    feedLbl.className='text-red-400';
+    feedMeta.textContent='Yeniden baglaniyor';
+    feedMeta.className='text-[10px] font-semibold uppercase tracking-wider text-red-400';
+  }else{
+    feedDot.className='w-2 h-2 rounded-full bg-slate-600';
+    feedLbl.textContent='Feed yok';
+    feedLbl.className='text-slate-400';
+    feedMeta.textContent='Feed bekleniyor';
+    feedMeta.className='text-[10px] font-semibold uppercase tracking-wider text-slate-500';
+  }
 
   // Auto
   const ab=$('btnAuto');
