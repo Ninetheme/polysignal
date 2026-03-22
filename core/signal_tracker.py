@@ -1,6 +1,6 @@
-"""Signal Tracker — 200ms (5x/s) fiyat kontrolu, 10 fazli sinyal sistemi.
+"""Signal Tracker — 200ms (5x/s) fiyat kontrolu, fazli sinyal sistemi.
 
-300 saniye = 10 faz x 30 saniye.
+300 saniyelik market penceresi kullanilir.
 Her faz sonunda sinyal yeniden degerlendirilir.
 Faz ici 200ms'de bir kontrol yapilir.
 
@@ -25,8 +25,8 @@ log = setup_logger("signal")
 
 SIGNAL_THRESHOLD_PCT = 10.0  # %10 makas → sinyal tetikle
 CHECK_INTERVAL = 0.2         # 200ms = saniyede 5 kontrol
-PHASE_DURATION = 30.0        # 30 saniye = 1 faz
-NUM_PHASES = 10              # 10 faz = 300 saniye
+MARKET_WINDOW_SEC = 300.0
+DEFAULT_PHASE_COUNT = 10
 CONFIRMATION_COUNT = 3       # 3 ardisik onay
 COOLDOWN_SEC = 2.0
 DEPTH_LEVELS = 5
@@ -81,14 +81,22 @@ class HedgeRequest:
 
 
 class SignalTracker:
-    """10 fazli sinyal sistemi + risk hedge + hizli risk sifirlama."""
+    """Kullanici tanimli fazli sinyal sistemi + risk hedge + hizli risk sifirlama."""
 
-    def __init__(self, book_getter: Callable):
+    def __init__(
+        self,
+        book_getter: Callable,
+        phase_count: int = DEFAULT_PHASE_COUNT,
+        market_window_sec: float = MARKET_WINDOW_SEC,
+    ):
         self._book_getter = book_getter
         self._up_asset_id: str = ""
         self._dn_asset_id: str = ""
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self.market_window_sec = market_window_sec
+        self.phase_count = max(1, int(phase_count))
+        self.phase_duration = self.market_window_sec / self.phase_count
 
         # State
         self.state = SignalState.NEUTRAL
@@ -122,6 +130,11 @@ class SignalTracker:
         self.checks = 0
         self.signals_fired = 0
         self.hedges_requested = 0
+
+    def set_phase_count(self, phase_count: int):
+        self.phase_count = max(1, int(phase_count))
+        self.phase_duration = self.market_window_sec / self.phase_count
+        self.current_phase = min(self.current_phase, self.phase_count - 1)
 
     def configure(self, up_asset_id: str, dn_asset_id: str):
         self._up_asset_id = up_asset_id
@@ -198,7 +211,11 @@ class SignalTracker:
         self._running = True
         self._market_start_ts = time.time()
         self._task = asyncio.create_task(self._loop())
-        log.info("SignalTracker baslatildi (200ms, 10 faz x 30s)")
+        log.info(
+            "SignalTracker baslatildi (200ms, %d faz x %.1fs)",
+            self.phase_count,
+            self.phase_duration,
+        )
 
     async def stop(self):
         self._running = False
@@ -237,12 +254,12 @@ class SignalTracker:
 
         # ── Faz hesabi ──
         elapsed = now - self._market_start_ts if self._market_start_ts > 0 else 0
-        new_phase = min(NUM_PHASES - 1, int(elapsed / PHASE_DURATION))
+        new_phase = min(self.phase_count - 1, int(elapsed / self.phase_duration))
         phase_changed = new_phase != self.current_phase
         if phase_changed:
             self._phase_signals.append(self.state)
             self.current_phase = new_phase
-            log.info("FAZ %d/10 | sinyal: %s | sure: %.0fs", new_phase + 1, self.state, elapsed)
+            log.info("FAZ %d/%d | sinyal: %s | sure: %.0fs", new_phase + 1, self.phase_count, self.state, elapsed)
 
         # ── Makas hesabi ──
         min_price = min(up_mid, dn_mid)
@@ -433,7 +450,7 @@ class SignalTracker:
             "spread_pct": round(last.spread_pct, 1) if last else 0,
             "confidence": round(last.confidence, 2) if last else 0,
             "phase": self.current_phase + 1,
-            "total_phases": NUM_PHASES,
+            "total_phases": self.phase_count,
             "rapid_move": last.rapid_move if last else False,
             "ref_edge": round(last.ref_edge, 4) if last else 0,
             "pressure_bias": round(last.pressure_bias, 4) if last else 0,

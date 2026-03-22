@@ -48,8 +48,10 @@ class DashboardServer:
     def _state(self) -> dict:
         s = self.strategy
         now = time.time()
+        time_remaining = max(0, s._market_end_time - now) if s._market_end_time else None
         books = {}
         feed_state = {"status": "offline", "ws_connected": False, "rx_age_sec": None, "book_age_sec": None, "stale_assets": []}
+        final_profit = {"active": False, "direction": None, "ready": False, "needed_budget": 0.0}
         if s.market_feed:
             feed_state = s.market_feed.health()
             for aid in s._current_asset_ids:
@@ -64,6 +66,28 @@ class DashboardServer:
                         "asks_top5": [{"p": l.price, "s": l.size} for l in book.asks[:10]],
                         "bid_vol": round(bid_vol, 0), "ask_vol": round(ask_vol, 0),
                     }
+            if (
+                time_remaining is not None and time_remaining <= 60
+                and hasattr(s, "_final_profit_direction")
+                and hasattr(s, "_profit_floor_budget")
+                and hasattr(s, "_ledger_for_side")
+            ):
+                direction = s._final_profit_direction()
+                if direction:
+                    idx = 0 if direction == "UP" else 1
+                    book = s.market_feed.get_book(s._current_asset_ids[idx]) if len(s._current_asset_ids) > idx else None
+                    ask = book.best_ask if book and book.best_ask else 0.0
+                    strong_shares = s._ledger_for_side(direction).shares
+                    total_cost_now = s.portfolio.total_cost()
+                    needed_budget = s._profit_floor_budget(direction, ask) if ask > 0 else 0.0
+                    final_profit = {
+                        "active": True,
+                        "direction": direction,
+                        "ready": strong_shares > total_cost_now,
+                        "needed_budget": round(needed_budget, 2),
+                        "strong_shares": round(strong_shares, 1),
+                        "total_cost": round(total_cost_now, 2),
+                    }
 
         up_p, dn_p = s._get_prices()
         pf = s.portfolio.state(up_p, dn_p)
@@ -76,16 +100,20 @@ class DashboardServer:
         up_rev = round(pf["up_revenue"], 2)
         dn_rev = round(pf["down_revenue"], 2)
         total_cost = pf["total_cost"]
+        taker_fee = round(getattr(s, "_taker_fee_paid", 0.0), 4)
+        effective_total_cost = total_cost + taker_fee
 
         up_current_val = round(up_p * up_shares, 2) if up_p else 0
         dn_current_val = round(dn_p * dn_shares, 2) if dn_p else 0
         up_max_payout = round(up_shares, 2)
         dn_max_payout = round(dn_shares, 2)
 
-        up_wins_pnl = pf.get("up_wins_pnl", 0)
-        dn_wins_pnl = pf.get("dn_wins_pnl", 0)
-        up_roi = round(up_wins_pnl / total_cost * 100, 1) if total_cost > 0 else 0
-        dn_roi = round(dn_wins_pnl / total_cost * 100, 1) if total_cost > 0 else 0
+        up_wins_pnl = round((pf.get("up_payout", 0) + pf.get("total_revenue", 0)) - effective_total_cost, 4)
+        dn_wins_pnl = round((pf.get("dn_payout", 0) + pf.get("total_revenue", 0)) - effective_total_cost, 4)
+        worst_pnl = round(min(up_wins_pnl, dn_wins_pnl), 4)
+        best_pnl = round(max(up_wins_pnl, dn_wins_pnl), 4)
+        up_roi = round(up_wins_pnl / effective_total_cost * 100, 1) if effective_total_cost > 0 else 0
+        dn_roi = round(dn_wins_pnl / effective_total_cost * 100, 1) if effective_total_cost > 0 else 0
         signal_state = s.signal_tracker.current() if s.signal_tracker else {
             "state": "NEUTRAL", "up_mid": 0, "dn_mid": 0,
             "spread_pct": 0, "confidence": 0, "checks": 0, "signals_fired": 0,
@@ -99,7 +127,7 @@ class DashboardServer:
             "busy": s.limit_engine.is_busy,
             "budget": s.budget,
             "market_question": s._market_question,
-            "time_remaining": max(0, s._market_end_time - now) if s._market_end_time else None,
+            "time_remaining": time_remaining,
             "btc_price": None,
             "up_price": up_p, "down_price": dn_p,
             "up_shares": up_shares, "down_shares": dn_shares,
@@ -115,13 +143,15 @@ class DashboardServer:
             "up_payout": pf.get("up_payout", 0), "dn_payout": pf.get("dn_payout", 0),
             "up_wins_pnl": up_wins_pnl, "dn_wins_pnl": dn_wins_pnl,
             "up_roi": up_roi, "dn_roi": dn_roi,
-            "worst_pnl": pf.get("worst_pnl", 0), "best_pnl": pf.get("best_pnl", 0),
+            "worst_pnl": worst_pnl, "best_pnl": best_pnl,
             "total_pnl": pf["total_pnl"], "total_cost": total_cost,
+            "taker_fee": taker_fee, "effective_total_cost": round(effective_total_cost, 4),
             "total_revenue": pf.get("total_revenue", 0),
             "realized_pnl": pf["realized_pnl"],
             "loss_pct": loss["loss_pct"], "loss_exceeded": loss["exceeded"],
             "books": books,
             "feed": feed_state,
+            "final_profit": final_profit,
             "orders": [
                 {"id": o.order_id, "asset": o.asset_id[:12], "side": o.side.value,
                  "price": o.price, "size": o.size,
@@ -136,6 +166,7 @@ class DashboardServer:
             "market_history": s.market_history[-100:],
             "cumulative_pnl": round(sum(h.get("resolved_pnl", 0) for h in s.market_history), 2),
             "auto_mode": s._auto_mode,
+            "phase_count": getattr(s, "phase_count", 10),
             "signal": signal_state,
             "signal_state": s._signal_state if hasattr(s, '_signal_state') else "NEUTRAL",
             "current_phase": (s._current_phase + 1) if hasattr(s, '_current_phase') else 0,
@@ -285,11 +316,58 @@ body { background: #080c14; }
 <body class="font-sans text-slate-200 text-sm antialiased">
 
 <!-- Header -->
-<header class="flex items-center justify-between px-6 py-3 bg-base-card border-b border-brd">
-  <h1 class="text-base font-extrabold tracking-tight">
-    <span class="text-cyan-400">&#9670;</span> Poly<span class="text-cyan-400">Signal</span>
-  </h1>
-  <div class="flex items-center gap-4 text-xs text-slate-400">
+<header class="flex items-center justify-between gap-4 px-6 py-3 bg-base-card border-b border-brd flex-wrap">
+  <div class="flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-extrabold tracking-tight">
+      <span class="text-pink-800">&#9670;</span> Poly<span class="text-pink-800">Signal</span>
+    </h1>
+    <label class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <span>Faz</span>
+      <select id="phaseSel"
+        onchange="setPhaseCount(this.value)"
+        class="bg-base-input border border-brd rounded-md px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500">
+        <option value="10">10</option>
+        <option value="15">15</option>
+        <option value="20">20</option>
+        <option value="25">25</option>
+        <option value="30">30</option>
+      </select>
+    </label>
+    <label class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <span>Butce</span>
+      <input type="number" id="inBudget" value="1000" min="10"
+        class="w-20 px-2.5 py-1 bg-base-input border border-brd rounded-md font-mono text-xs font-medium text-slate-200 focus:outline-none focus:border-cyan-500 transition">
+    </label>
+    <div class="flex items-center gap-2 flex-wrap">
+      <label class="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+        <span>Buy UP</span>
+        <input type="number" id="buyUpBudget" value="10" min="5" step="1"
+          class="w-14 px-2 py-1 bg-base-input border border-brd rounded-md font-mono text-xs font-medium text-slate-200 focus:outline-none focus:border-emerald-500 transition">
+      </label>
+      <button onclick="sendCmd({action:'buy',token:'UP',budget:+$('buyUpBudget').value})"
+        class="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-md transition-all hover:-translate-y-0.5">&#8594;</button>
+      <label class="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-rose-400">
+        <span>Buy DN</span>
+        <input type="number" id="buyDnBudget" value="10" min="5" step="1"
+          class="w-14 px-2 py-1 bg-base-input border border-brd rounded-md font-mono text-xs font-medium text-slate-200 focus:outline-none focus:border-rose-500 transition">
+      </label>
+      <button onclick="sendCmd({action:'buy',token:'DOWN',budget:+$('buyDnBudget').value})"
+        class="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-md transition-all hover:-translate-y-0.5">&#8594;</button>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button onclick="sendCmd({action:'start',budget:+$('inBudget').value})"
+        class="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[10px] uppercase tracking-wider rounded-md transition-all hover:-translate-y-0.5">Start</button>
+      <button id="btnAuto" onclick="sendCmd({action:'auto',budget:+$('inBudget').value})"
+        class="px-3 py-1.5 bg-blue-500 hover:bg-blue-400 text-white font-bold text-[10px] uppercase tracking-wider rounded-md transition-all hover:-translate-y-0.5">Auto</button>
+      <button onclick="sendCmd({action:'sell',token:'UP',shares:0})"
+        class="px-3 py-1.5 bg-red-500 hover:bg-red-400 text-white font-bold text-[10px] uppercase tracking-wider rounded-md transition-all hover:-translate-y-0.5">Sell UP</button>
+      <button onclick="sendCmd({action:'sell',token:'DOWN',shares:0})"
+        class="px-3 py-1.5 bg-red-500 hover:bg-red-400 text-white font-bold text-[10px] uppercase tracking-wider rounded-md transition-all hover:-translate-y-0.5">Sell DN</button>
+      <button onclick="sendCmd({action:'stop'})"
+        class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold text-[10px] uppercase tracking-wider rounded-md transition-all hover:-translate-y-0.5">Stop</button>
+    </div>
+  </div>
+  <div class="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
     <span id="mktLabel" class="text-cyan-400 font-semibold truncate max-w-xs">Baglanmadi</span>
     <span id="busyLabel" class="hidden px-2 py-0.5 bg-amber-500 text-black rounded text-[10px] font-bold uppercase">Emir Isleniyor</span>
     <span class="flex items-center gap-1.5">
@@ -337,30 +415,6 @@ body { background: #080c14; }
   <!-- Left Column -->
   <div class="flex flex-col gap-4 overflow-y-auto min-h-0">
 
-    <!-- Controls -->
-    <div class="bg-base-card border border-brd rounded-xl">
-      <div class="px-5 py-2.5 border-b border-brd text-[10px] font-bold uppercase tracking-widest text-slate-500">Islem Kontrol</div>
-      <div class="p-4">
-        <div class="flex items-end gap-3 flex-wrap">
-          <div>
-            <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Butce ($)</label>
-            <input type="number" id="inBudget" value="1000" min="10"
-              class="w-24 px-3 py-2 bg-base-input border border-brd rounded-lg font-mono text-sm font-medium text-slate-200 focus:outline-none focus:border-cyan-500 transition">
-          </div>
-          <button onclick="sendCmd({action:'start',budget:+$('inBudget').value})"
-            class="px-7 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm uppercase tracking-wider rounded-lg transition-all hover:-translate-y-0.5">Start</button>
-          <button id="btnAuto" onclick="sendCmd({action:'auto',budget:+$('inBudget').value})"
-            class="px-5 py-2.5 bg-blue-500 hover:bg-blue-400 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-all hover:-translate-y-0.5">Auto</button>
-          <button onclick="sendCmd({action:'sell',token:'UP',shares:0})"
-            class="px-4 py-2.5 bg-red-500 hover:bg-red-400 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-all hover:-translate-y-0.5">Sell UP</button>
-          <button onclick="sendCmd({action:'sell',token:'DOWN',shares:0})"
-            class="px-4 py-2.5 bg-red-500 hover:bg-red-400 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-all hover:-translate-y-0.5">Sell DN</button>
-          <button onclick="sendCmd({action:'stop'})"
-            class="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold text-xs uppercase tracking-wider rounded-lg transition-all hover:-translate-y-0.5">Stop</button>
-        </div>
-      </div>
-    </div>
-
     <!-- Signal Panel -->
     <div class="bg-base-card border border-brd rounded-xl">
       <div class="px-5 py-2.5 border-b border-brd text-[10px] font-bold uppercase tracking-widest text-slate-500">Sinyal Takibi</div>
@@ -387,6 +441,7 @@ body { background: #080c14; }
           <span id="sigHedge" class="text-amber-400 font-bold">0</span><span class="text-[10px] text-slate-500">hed</span>
           <span id="sigChecks" class="text-slate-500">0</span><span class="text-[10px] text-slate-500">chk</span>
           <span id="sigRapid" class="hidden px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-[10px] font-bold">HIZLI</span>
+          <span id="sigProfit" class="hidden px-2 py-0.5 rounded text-[10px] font-bold">SON60</span>
         </div>
         <!-- Satir 2: Orderbook referans metrikleri -->
         <div class="flex items-center gap-3 font-mono text-xs flex-wrap border-t border-brd/50 pt-2.5">
@@ -478,6 +533,8 @@ body { background: #080c14; }
           <span>En kotu: <span id="worstPnl" class="text-red-400">$0</span></span>
           <span>En iyi: <span id="bestPnl" class="text-emerald-400">$0</span></span>
           <span>Maliyet: $<span id="totalCost">0</span></span>
+          <span>Taker Fee: $<span id="takerFee">0</span></span>
+          <span>Maliyet+Fee: $<span id="totalCostFee">0</span></span>
           <span>Gelir: $<span id="totalRev">0</span></span>
           <span class="flex items-center gap-2">
             <span id="lossLbl">%0</span>
@@ -557,6 +614,12 @@ body { background: #080c14; }
 const $=id=>document.getElementById(id);
 let ws;
 
+function setPhaseCount(v){
+  const phaseCount=+v;
+  if(!phaseCount)return;
+  sendCmd({action:'set_phase_count',phase_count:phaseCount});
+}
+
 function conn(){
   ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
   ws.onopen=()=>{$('cDot').className='w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_theme(colors.emerald.400)]';$('cLbl').textContent='Bagli'};
@@ -621,13 +684,15 @@ function render(d){
   $('worstPnl').textContent='$'+(wp>=0?'+':'')+wp.toFixed(2);$('worstPnl').style.color=wp>=0?'#10b981':'#ef4444';
   $('bestPnl').textContent='$'+(bp>=0?'+':'')+bp.toFixed(2);$('bestPnl').style.color=bp>=0?'#10b981':'#ef4444';
   $('totalCost').textContent=(d.total_cost||0).toFixed(2);
+  $('takerFee').textContent=(d.taker_fee||0).toFixed(2);
+  $('totalCostFee').textContent=(d.effective_total_cost||0).toFixed(2);
   $('totalRev').textContent=(d.total_revenue||0).toFixed(2);
 
-  const upSh=d.up_shares||0,dnSh=d.down_shares||0,tc=d.total_cost||0,trev=d.total_revenue||0;
+  const upSh=d.up_shares||0,dnSh=d.down_shares||0,tc=d.total_cost||0,tcEff=d.effective_total_cost||0,trev=d.total_revenue||0;
   $('upPayout').textContent=upSh.toFixed(0);$('upPayAmt').textContent=(upSh+trev).toFixed(0);
-  $('upPayAmt2').textContent=(upSh+trev).toFixed(0);$('upTotCost').textContent=tc.toFixed(0);
+  $('upPayAmt2').textContent=(upSh+trev).toFixed(0);$('upTotCost').textContent=tcEff.toFixed(2);
   $('dnPayout').textContent=dnSh.toFixed(0);$('dnPayAmt').textContent=(dnSh+trev).toFixed(0);
-  $('dnPayAmt2').textContent=(dnSh+trev).toFixed(0);$('dnTotCost').textContent=tc.toFixed(0);
+  $('dnPayAmt2').textContent=(dnSh+trev).toFixed(0);$('dnTotCost').textContent=tcEff.toFixed(2);
 
   const cp=d.cumulative_pnl||0;
   $('cumPnl').textContent='$'+(cp>=0?'+':'')+cp.toFixed(2);$('cumPnl').style.color=cp>=0?'#10b981':'#ef4444';
@@ -692,9 +757,24 @@ function render(d){
   scb.className='h-full rounded-full transition-all '+(sc>0.6?'bg-amber-400':sc>0.3?'bg-blue-400':'bg-slate-500');
   $('sigChecks').textContent=sig.checks||0;
   $('sigFired').textContent=sig.signals_fired||0;
-  $('sigPhase').textContent=(d.current_phase||1)+'/10';
+  const totalPhases=d.phase_count||sig.total_phases||10;
+  $('sigPhase').textContent=(d.current_phase||1)+'/'+totalPhases;
+  if($('phaseSel').value!==String(totalPhases))$('phaseSel').value=String(totalPhases);
   $('sigHedge').textContent=sig.hedges||0;
   $('sigRapid').className=sig.rapid_move?'px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-[10px] font-bold':'hidden';
+  const fp=d.final_profit||{};
+  const fpe=$('sigProfit');
+  if(fp.active){
+    if(fp.ready){
+      fpe.textContent='SON60 '+(fp.direction||'—')+' KAR HAZIR';
+      fpe.className='px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+    }else{
+      fpe.textContent='SON60 '+(fp.direction||'—')+' +$'+((fp.needed_budget||0).toFixed(2));
+      fpe.className='px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
+    }
+  }else{
+    fpe.className='hidden px-2 py-0.5 rounded text-[10px] font-bold';
+  }
 
   // Faz rolu badge
   const pr=d.phase_role||'AL';

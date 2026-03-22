@@ -2,7 +2,7 @@ import asyncio
 import time
 import warnings
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 warnings.filterwarnings(
     "ignore",
@@ -122,6 +122,29 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(state["market_history"][0]["resolved_pnl"], 50.0)
         self.assertEqual(state["market_history"][-1]["resolved_pnl"], 149.0)
 
+    def test_state_exposes_phase_count(self):
+        strategy = TestStrategy(BotConfig())
+        dashboard = DashboardServer(strategy)
+
+        state = dashboard._state()
+
+        self.assertEqual(state["phase_count"], 10)
+
+    def test_state_adds_taker_fee_to_display_costs_and_pnl(self):
+        strategy = TestStrategy(BotConfig())
+        strategy.portfolio.up.record_buy(0.60, 100)
+        strategy.portfolio.down.record_buy(0.40, 80)
+        strategy._taker_fee_paid = 1.25
+        dashboard = DashboardServer(strategy)
+
+        state = dashboard._state()
+
+        self.assertAlmostEqual(state["total_cost"], 92.0, places=2)
+        self.assertAlmostEqual(state["taker_fee"], 1.25, places=2)
+        self.assertAlmostEqual(state["effective_total_cost"], 93.25, places=2)
+        self.assertAlmostEqual(state["up_wins_pnl"], 6.75, places=2)
+        self.assertAlmostEqual(state["dn_wins_pnl"], -13.25, places=2)
+
 
 class MarketDataFeedTests(unittest.TestCase):
     def test_sell_price_change_keeps_asks_sorted_ascending(self):
@@ -199,6 +222,95 @@ class StrategyFillTests(unittest.TestCase):
         self.assertEqual(len(strategy.order_archive), 2)
         self.assertAlmostEqual(sum(fill["size"] for fill in strategy.order_archive), 7.0)
 
+
+class StrategyConfigTests(unittest.IsolatedAsyncioTestCase):
+    async def test_set_phase_count_restarts_active_strategy(self):
+        strategy = TestStrategy(BotConfig())
+        strategy.bot_active = True
+
+        with patch.object(strategy, "_disconnect", new=AsyncMock()) as disconnect, \
+             patch.object(strategy, "_start", new=AsyncMock()) as start:
+            await strategy.handle_command({"action": "set_phase_count", "phase_count": 15})
+
+        self.assertEqual(strategy.phase_count, 15)
+        self.assertEqual(len(strategy._phase_spent), 15)
+        disconnect.assert_awaited_once()
+        start.assert_awaited_once()
+
+    async def test_do_sell_liquidates_selected_side(self):
+        strategy = TestStrategy(BotConfig())
+        strategy.bot_active = True
+        strategy.budget = 10.0
+        strategy._current_asset_ids = ["up-asset", "down-asset"]
+        strategy.portfolio.up.record_buy(0.60, 10)
+        strategy._phase_spent[0] = 5.2
+
+        up_book = OrderBook(
+            bids=[OrderBookLevel(0.52, 500)],
+            asks=[OrderBookLevel(0.53, 500)],
+        )
+        dn_book = OrderBook(
+            bids=[OrderBookLevel(0.47, 500)],
+            asks=[OrderBookLevel(0.48, 500)],
+        )
+
+        class FakeMarketFeed:
+            def get_book(self, aid):
+                return up_book if aid == "up-asset" else dn_book
+
+        strategy.market_feed = FakeMarketFeed()
+
+        await strategy._do_sell("UP")
+
+        self.assertAlmostEqual(strategy.portfolio.up.shares, 0.0, places=1)
+        self.assertAlmostEqual(strategy.portfolio.up.total_revenue, 5.2, places=2)
+        self.assertAlmostEqual(strategy._remaining_budget(), 9.2, places=2)
+        self.assertAlmostEqual(strategy._phase_spent[0], 0.0, places=2)
+        self.assertEqual(strategy.stats["fills"], 1)
+        self.assertEqual(strategy.stats["orders_sent"], 1)
+
+    async def test_do_buy_taker_buys_selected_side(self):
+        strategy = TestStrategy(BotConfig())
+        strategy.bot_active = True
+        strategy._current_asset_ids = ["up-asset", "down-asset"]
+
+        up_book = OrderBook(
+            bids=[OrderBookLevel(0.52, 500)],
+            asks=[OrderBookLevel(0.53, 500)],
+        )
+        dn_book = OrderBook(
+            bids=[OrderBookLevel(0.47, 500)],
+            asks=[OrderBookLevel(0.48, 500)],
+        )
+
+        class FakeMarketFeed:
+            def get_book(self, aid):
+                return up_book if aid == "up-asset" else dn_book
+
+        strategy.market_feed = FakeMarketFeed()
+
+        await strategy._do_buy("UP", 20.0)
+
+        self.assertGreater(strategy.portfolio.up.shares, 0.0)
+        self.assertAlmostEqual(strategy.portfolio.down.shares, 0.0)
+        self.assertGreater(strategy.portfolio.up.total_cost, 0.0)
+        self.assertEqual(strategy.stats["fills"], 1)
+        self.assertEqual(strategy.stats["orders_sent"], 1)
+
+    async def test_phase_budget_room_reopens_after_sell_releases_spend(self):
+        strategy = TestStrategy(BotConfig())
+        strategy.bot_active = True
+        strategy.budget = 100.0
+        strategy._current_phase = 0
+        strategy._phase_spent[0] = 5.0
+
+        room_before = strategy._phase_budget_room("UP", 100.0)
+        strategy._release_phase_spend(3.0)
+        room_after = strategy._phase_budget_room("UP", 100.0)
+
+        self.assertEqual(room_before, 0.0)
+        self.assertEqual(strategy._phase_spent[0], 2.0)
+        self.assertGreater(room_after, 0.0)
 
 class LimitEngineTests(unittest.IsolatedAsyncioTestCase):
     async def test_execute_buy_tracks_partial_fill_before_cancel(self):
@@ -417,6 +529,37 @@ class RebalanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(strategy._orderbook_stop_side, "UP")
         self.assertFalse(strategy.order_mgr.active_orders)
 
+    async def test_buy_in_direction_waits_while_price_is_below_ten_cents(self):
+        """¢10 altinda alim yapma; fiyat degisince yeniden hesaplayip al."""
+        strategy = TestStrategy(BotConfig())
+        strategy.budget = 1000.0
+        strategy._current_asset_ids = ["up-asset", "down-asset"]
+        strategy._current_phase = 0
+
+        up_book = OrderBook(
+            bids=[OrderBookLevel(0.08, 500)],
+            asks=[OrderBookLevel(0.09, 500)],
+        )
+        dn_book = OrderBook(
+            bids=[OrderBookLevel(0.90, 500)],
+            asks=[OrderBookLevel(0.91, 500)],
+        )
+
+        class FakeMarketFeed:
+            def get_book(self, aid):
+                return up_book if aid == "up-asset" else dn_book
+
+        strategy.market_feed = FakeMarketFeed()
+
+        await strategy._buy_in_direction("UP", 200)
+        self.assertEqual(strategy.portfolio.up.shares, 0)
+
+        up_book.bids = [OrderBookLevel(0.10, 500)]
+        up_book.asks = [OrderBookLevel(0.11, 500)]
+        await strategy._buy_in_direction("UP", 200)
+
+        self.assertGreater(strategy.portfolio.up.shares, 0)
+
     async def test_taker_buy_hard_clamps_to_remaining_budget(self):
         """Alt katman taker alimi caller hatasi olsa da kalan butceyi asmamali."""
         strategy = TestStrategy(BotConfig())
@@ -428,6 +571,17 @@ class RebalanceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertAlmostEqual(spent, 5.0, places=2)
         self.assertAlmostEqual(strategy.portfolio.total_cost(), 100.0, places=2)
+
+    async def test_taker_buy_rejects_sub_ten_cent_price(self):
+        """¢10 altinda taker BUY gonderilmemeli."""
+        strategy = TestStrategy(BotConfig())
+        strategy.budget = 100.0
+        strategy._current_asset_ids = ["up-asset", "down-asset"]
+
+        spent = await strategy._taker_buy("DOWN", 1, 0.09, 40.0)
+
+        self.assertEqual(spent, 0.0)
+        self.assertEqual(strategy.portfolio.total_cost(), 0.0)
 
     async def test_maker_buy_hard_clamps_to_remaining_budget(self):
         """Maker alim de kalan market butcesini gecmemeli."""
@@ -451,6 +605,28 @@ class RebalanceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertLessEqual(placed, 5.0 + 1e-6)
         self.assertAlmostEqual(strategy.order_mgr.pending_notional(), placed, places=2)
+
+    async def test_maker_buy_rejects_sub_ten_cent_levels(self):
+        """¢10 altindaki seviyelere maker BUY yazilmamali."""
+        strategy = TestStrategy(BotConfig())
+        strategy.budget = 100.0
+        strategy._current_asset_ids = ["up-asset", "down-asset"]
+
+        dn_book = OrderBook(
+            bids=[OrderBookLevel(0.09, 500), OrderBookLevel(0.08, 500)],
+            asks=[OrderBookLevel(0.11, 500)],
+        )
+
+        class FakeMarketFeed:
+            def get_book(self, aid):
+                return dn_book
+
+        strategy.market_feed = FakeMarketFeed()
+
+        placed = await strategy._maker_buy("DOWN", 1, 0.09, 40.0)
+
+        self.assertEqual(placed, 0.0)
+        self.assertFalse(strategy.order_mgr.active_orders)
 
     async def test_buy_cheap_token_under_15_uses_five_pct_budget(self):
         """¢15 alti token icin %5 butceyle taker alim yapilmali."""
@@ -510,6 +686,32 @@ class RebalanceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertAlmostEqual(strategy.portfolio.up.total_cost, first_cost, places=2)
         self.assertEqual(strategy.stats["fills"], first_fills)
+
+    async def test_buy_cheap_token_skips_sub_ten_cent_prices(self):
+        """¢10 altina dusen ucuz tokenlar otomatik toplanmamali."""
+        strategy = TestStrategy(BotConfig())
+        strategy.budget = 1000.0
+        strategy._current_asset_ids = ["up-asset", "down-asset"]
+
+        up_book = OrderBook(
+            bids=[OrderBookLevel(0.08, 500)],
+            asks=[OrderBookLevel(0.09, 500)],
+        )
+        dn_book = OrderBook(
+            bids=[OrderBookLevel(0.86, 500)],
+            asks=[OrderBookLevel(0.87, 500)],
+        )
+
+        class FakeMarketFeed:
+            def get_book(self, aid):
+                return up_book if aid == "up-asset" else dn_book
+
+        strategy.market_feed = FakeMarketFeed()
+
+        await strategy._buy_cheap_token_if_needed(120)
+
+        self.assertNotIn("UP", strategy._cheap_take_fired)
+        self.assertEqual(strategy.portfolio.up.shares, 0)
 
 
 class CostBalanceTests(unittest.IsolatedAsyncioTestCase):
@@ -713,6 +915,24 @@ class CostBalanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(strategy._budget_cap(), 5000.0)
         self.assertEqual(strategy._remaining_budget(), 5000.0)
 
+    async def test_auto_loop_retries_quickly_when_market_fetch_times_out(self):
+        """Gamma timeout halinde auto loop 5dk uyumak yerine hizli retry yapmali."""
+        strategy = TestStrategy(BotConfig())
+        strategy._auto_mode = True
+        strategy.bot_active = False
+        strategy.scanner._fetch_market = lambda ts: None
+
+        delays = []
+
+        async def fake_sleep(delay):
+            delays.append(delay)
+            strategy._auto_mode = False
+
+        with patch("core.strategy.asyncio.sleep", fake_sleep):
+            await strategy._auto_loop()
+
+        self.assertEqual(delays, [3])
+
     async def test_set_budget_cancels_pending_orders_that_exceed_new_total_cap(self):
         """Yeni butce UP+DOWN+pending toplam tavaninin altina dusurse acik alislar iptal edilmeli."""
         strategy = TestStrategy(BotConfig())
@@ -868,6 +1088,114 @@ class CostBalanceTests(unittest.IsolatedAsyncioTestCase):
 
         strategy._phase_spent[2] = room_before + 1.0
         self.assertEqual(strategy._phase_budget_room("UP", 1000.0), 0.0)
+
+    async def test_final_minute_profit_floor_forces_strong_side_profitable(self):
+        """Son 60s'de cok guclu sinyal varsa guclu taraf shares > total_cost olmali."""
+        strategy = TestStrategy(BotConfig())
+        strategy.budget = 1000.0
+        strategy._current_asset_ids = ["up-asset", "down-asset"]
+        strategy.signal_tracker = FakeSignalTracker(
+            SignalSnapshot(
+                ts=time.time(),
+                up_mid=0.70,
+                dn_mid=0.30,
+                spread_pct=40.0,
+                raw_signal=SignalState.STRONG_UP,
+                confirmed=SignalState.STRONG_UP,
+                confidence=1.0,
+                phase=8,
+                rapid_move=True,
+                edge_score=0.15,
+                persistence=0.80,
+            )
+        )
+
+        strategy.portfolio.up.record_buy(0.60, 50)    # $30 cost, 50sh payout
+        strategy.portfolio.down.record_buy(0.80, 40)  # $32 cost, total $62
+
+        up_book = OrderBook(
+            bids=[OrderBookLevel(0.49, 500)],
+            asks=[OrderBookLevel(0.50, 500)],
+        )
+        dn_book = OrderBook(
+            bids=[OrderBookLevel(0.49, 500)],
+            asks=[OrderBookLevel(0.50, 500)],
+        )
+
+        class FakeMarketFeed:
+            def get_book(self, aid):
+                return up_book if aid == "up-asset" else dn_book
+
+        strategy.market_feed = FakeMarketFeed()
+
+        await strategy._enforce_final_minute_profit_floor(55)
+
+        self.assertGreater(strategy.portfolio.up.shares, strategy.portfolio.total_cost())
+
+    async def test_final_minute_profit_floor_ignores_non_strong_signal(self):
+        """Yeterince guclu olmayan sinyalde son-60s zorunlu tamamlayici alim yapma."""
+        strategy = TestStrategy(BotConfig())
+        strategy.budget = 1000.0
+        strategy._current_asset_ids = ["up-asset", "down-asset"]
+        strategy.signal_tracker = FakeSignalTracker(
+            SignalSnapshot(
+                ts=time.time(),
+                up_mid=0.55,
+                dn_mid=0.45,
+                spread_pct=12.0,
+                raw_signal=SignalState.STRONG_UP,
+                confirmed=SignalState.NEUTRAL,
+                confidence=0.35,
+                phase=8,
+                rapid_move=False,
+                edge_score=0.04,
+                persistence=0.40,
+            )
+        )
+
+        strategy.portfolio.up.record_buy(0.60, 50)
+        strategy.portfolio.down.record_buy(0.80, 40)
+
+        up_book = OrderBook(
+            bids=[OrderBookLevel(0.49, 500)],
+            asks=[OrderBookLevel(0.50, 500)],
+        )
+        dn_book = OrderBook(
+            bids=[OrderBookLevel(0.49, 500)],
+            asks=[OrderBookLevel(0.50, 500)],
+        )
+
+        class FakeMarketFeed:
+            def get_book(self, aid):
+                return up_book if aid == "up-asset" else dn_book
+
+        strategy.market_feed = FakeMarketFeed()
+        up_before = strategy.portfolio.up.shares
+
+        await strategy._enforce_final_minute_profit_floor(55)
+
+        self.assertEqual(strategy.portfolio.up.shares, up_before)
+
+    async def test_taker_buy_tracks_fee_paid(self):
+        """Taker alimi fee hesabini ayri izlemeli."""
+        strategy = TestStrategy(BotConfig())
+        strategy.budget = 1000.0
+        strategy._current_asset_ids = ["12345678901234567890", "22345678901234567890"]
+
+        class FakeResp:
+            status_code = 200
+
+            def json(self):
+                return {"base_fee": 1000}
+
+        with patch("core.strategy.requests.get", return_value=FakeResp()) as mock_get:
+            spent = await strategy._taker_buy("UP", 0, 0.50, 50.0)
+            fee = strategy._estimate_taker_fee("12345678901234567890", 0.50, 100.0)
+
+        self.assertAlmostEqual(spent, 50.0, places=2)
+        self.assertAlmostEqual(strategy._taker_fee_paid, 0.7812, places=4)
+        self.assertAlmostEqual(fee, 0.7812, places=4)
+        self.assertEqual(mock_get.call_count, 1)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """Bot configuration and settings."""
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 import os
 from dataclasses import dataclass, field

@@ -256,6 +256,40 @@ class OrderManager:
             log.info("Expired %d stale orders", len(expired))
         return len(expired)
 
+    async def poll_order_fills(self, order_ids: list[str]) -> dict[str, float]:
+        """Poll real fill status for maker orders via API.
+
+        Returns: {order_id: filled_size} for each order.
+        Test modda simule eder (trade stream'den gelen dolumu dondurur).
+        """
+        results = {}
+        for oid in order_ids:
+            order = self.active_orders.get(oid)
+            if not order:
+                continue
+
+            if self.test_mode:
+                # Test modda mevcut filled_size'i dondur (trade stream tarafindan guncellenir)
+                results[oid] = order.filled_size
+                continue
+
+            try:
+                resp = await asyncio.to_thread(self._client.get_order, oid)
+                if resp:
+                    real_filled = float(resp.get("size_matched", 0))
+                    order.filled_size = real_filled
+                    if real_filled >= order.size:
+                        order.status = OrderStatus.MATCHED
+                        self.active_orders.pop(oid, None)
+                    results[oid] = real_filled
+                else:
+                    results[oid] = order.filled_size
+            except Exception as e:
+                log.warning("Poll order %s failed: %s", oid[:12], e)
+                results[oid] = order.filled_size
+
+        return results
+
     def get_live_orders(self, asset_id: Optional[str] = None) -> list[ManagedOrder]:
         """Get all live orders, optionally filtered by asset_id."""
         orders = [o for o in self.active_orders.values() if o.status == OrderStatus.LIVE]

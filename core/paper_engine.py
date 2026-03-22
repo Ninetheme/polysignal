@@ -193,6 +193,10 @@ class PaperPortfolio:
     def total_revenue(self) -> float:
         return self.up.total_revenue + self.down.total_revenue
 
+    def net_outlay(self) -> float:
+        """Open cash tied up in inventory after realized sale proceeds."""
+        return max(0.0, self.total_cost() - self.total_revenue())
+
     def total_shares(self) -> float:
         return self.up.shares + self.down.shares
 

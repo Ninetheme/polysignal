@@ -14,6 +14,7 @@ import json
 import os
 import time
 from typing import Optional
+import requests
 
 from config.settings import BotConfig
 from core.market_data import MarketDataFeed, OrderBook, LastTrade
@@ -58,20 +59,29 @@ ARCHIVE_FILE = str(_BASE / "data" / "order_archive.json")
 HISTORY_FILE = str(_BASE / "data" / "market_history.json")
 
 # Strateji — Directional Follow + Reversal Catch-Up
+MARKET_WINDOW_SEC = 300.0
+DEFAULT_PHASE_COUNT = 10
+VALID_PHASE_COUNTS = (10, 15, 20, 25, 30)
 MAX_BUDGET_RISK_PCT = 10.0      # toplam butcenin en fazla %10'u riskte
 IZLE_DURATION = 30.0            # ilk 30s izleme
 MIN_IZLE_BEFORE_ENTRY = 5.0     # guclu yon erken netlesirse erken gir
 STOP_BEFORE_END = 10.0          # son 10s alim durdur
 BUDGET_PER_SEC = 0.004          # butcenin %0.4'u/saniye (250s = %100)
 DIRECTION_CONFIRM_SECS = 3      # yon degisimi onaylamak icin 3s ardisik
-NUM_PHASES = 10                 # dashboard uyumlulugu icin
-PHASE_DURATION = 30.0
 ORDERBOOK_STOP_PRICE = 0.90     # orderbook 90 gorduyse yeni alim yok
 CHEAP_TAKE_PRICE = 0.15         # ¢15 alti ucuz token firsati
+MIN_BUY_PRICE = 0.10            # ¢10 altinda UP/DN fark etmez alim yapma
 CHEAP_TAKE_BUDGET_PCT = 5.0     # toplam butcenin %5'i kadar taker alim
 MIN_TRADE_BUDGET = 5.0
 MIN_EFFECTIVE_BUDGET = 4.95
 MIN_MARKET_TIME_LEFT = 20.0
+FINAL_PROFIT_WINDOW = 60.0      # son 60s: cok guclu sinyal karli olmali
+FINAL_PROFIT_SIGNAL_STRENGTH = 0.85
+FINAL_PROFIT_RAPID_STRENGTH = 0.75
+FINAL_PROFIT_MARGIN_SHARES = 0.1
+TAKER_FEE_CACHE_TTL = 300.0
+TAKER_FEE_RATE_SCALE = 4000.0
+TAKER_FEE_EXPONENT_CRYPTO = 2
 PHASE_BUDGET_BASE_PCT = 0.03    # her fazda en az butcenin %3'u kullanilabilir
 PHASE_BUDGET_MAX_PCT = 0.16     # cok guclu sinyalde faz limiti butcenin %16'sina kadar cikar
 PHASE_RELEASE_BASE = 0.25       # zayif sinyalde faz limitinin %25'i kadar tek tick alim
@@ -110,6 +120,7 @@ class LimitBotStrategy:
         self._spent: float = 0.0
         self._auto_mode: bool = True
         self._auto_task: Optional[asyncio.Task] = None
+        self._last_auto_retry_log_ts: float = 0.0
         self._tick_count: int = 0
         self._lock = None
         self.signal_tracker: Optional[SignalTracker] = None
@@ -122,9 +133,14 @@ class LimitBotStrategy:
         self._orderbook_stop_hit: bool = False
         self._orderbook_stop_side: Optional[str] = None
         self._cheap_take_fired: set[str] = set()
+        self._taker_fee_paid: float = 0.0
+        self._last_trade_ts: float = 0.0
+        self._fee_rate_bps_cache: dict[str, int] = {}
+        self._fee_rate_cache_ts: dict[str, float] = {}
+        self.phase_count: int = DEFAULT_PHASE_COUNT
 
         # Faz bazli butce
-        self._phase_spent: list[float] = [0.0] * NUM_PHASES  # her fazda harcanan
+        self._phase_spent: list[float] = [0.0] * self.phase_count  # her fazda harcanan
         self._current_phase: int = 0
         self._market_start_ts: float = 0
 
@@ -249,9 +265,12 @@ class LimitBotStrategy:
     def _budget_cap(self) -> float:
         return self.budget
 
+    def _capital_committed(self) -> float:
+        return self.portfolio.net_outlay()
+
     def _remaining_budget(self) -> float:
         cap = self._budget_cap()
-        return max(0.0, cap - self.portfolio.total_cost() - self.order_mgr.pending_notional())
+        return max(0.0, cap - self._capital_committed() - self.order_mgr.pending_notional())
 
     async def _set_budget_value(self, raw_budget: float, source: str = "UI"):
         old_budget = self.budget
@@ -265,7 +284,7 @@ class LimitBotStrategy:
             self._log(f"BUTCE {source} | ${old_budget:.0f} → ${self.budget:.0f}")
             return
 
-        spent = self.portfolio.total_cost()
+        spent = self._capital_committed()
         pending = self.order_mgr.pending_notional()
         if spent + pending > self.budget and pending > 0:
             cancelled = await self.order_mgr.cancel_all()
@@ -320,13 +339,99 @@ class LimitBotStrategy:
         except Exception as e:
             log.error("History kayit hatasi: %s", e)
 
-    def _archive_fill(self, token: str, price: float, size: float, cost: float):
+    def _archive_fill(
+        self,
+        token: str,
+        price: float,
+        size: float,
+        cost: float,
+        liquidity: str = "",
+        fee: float = 0.0,
+    ):
         self.order_archive.append({
             "ts": time.time(), "time": time.strftime("%Y-%m-%d %H:%M:%S"),
             "market": self._market_question, "token": token,
             "price": price, "size": round(size, 1), "cost": round(cost, 4),
+            "liquidity": liquidity or "",
+            "fee": round(max(0.0, fee), 4),
         })
         self._save_archive()
+
+    def _get_fee_rate_bps(self, asset_id: str) -> int:
+        """Fetch and cache feeRateBps for a numeric Polymarket token id."""
+        if not asset_id or not str(asset_id).isdigit():
+            return 0
+
+        now = time.time()
+        cached = self._fee_rate_bps_cache.get(asset_id)
+        cache_ts = self._fee_rate_cache_ts.get(asset_id, 0.0)
+        if cached is not None and (now - cache_ts) < TAKER_FEE_CACHE_TTL:
+            return cached
+
+        try:
+            resp = requests.get(
+                f"{self.config.polymarket.clob_url}/fee-rate",
+                params={"token_id": asset_id},
+                timeout=3,
+            )
+            if resp.status_code == 200:
+                fee_rate_bps = int(resp.json().get("base_fee") or 0)
+                self._fee_rate_bps_cache[asset_id] = fee_rate_bps
+                self._fee_rate_cache_ts[asset_id] = now
+                return fee_rate_bps
+        except Exception as e:
+            log.debug("Fee rate fetch error for %s: %s", asset_id[:12], e)
+
+        return cached or 0
+
+    def _estimate_taker_fee(self, asset_id: str, price: float, shares: float) -> float:
+        """Estimate taker fee in USDC for crypto binary markets."""
+        if shares <= 0 or price <= 0 or price >= 1.0:
+            return 0.0
+
+        fee_rate_bps = self._get_fee_rate_bps(asset_id)
+        if fee_rate_bps <= 0:
+            return 0.0
+
+        # Official fee docs use crypto feeRate as a decimal (0.25),
+        # while the live fee-rate endpoint returns 1000 for current BTC 5m markets.
+        fee_rate = fee_rate_bps / TAKER_FEE_RATE_SCALE
+        fee = shares * price * fee_rate * ((price * (1.0 - price)) ** TAKER_FEE_EXPONENT_CRYPTO)
+        return round(max(0.0, fee), 4)
+
+    def _phase_duration(self) -> float:
+        return MARKET_WINDOW_SEC / max(1, self.phase_count)
+
+    def _reset_phase_tracking(self):
+        self._phase_spent = [0.0] * self.phase_count
+        self._current_phase = -1
+
+    async def _set_phase_count(self, phase_count: int):
+        try:
+            phase_count = int(phase_count)
+        except (TypeError, ValueError):
+            self._log("FAZ HATA | gecersiz faz sayisi")
+            return
+
+        if phase_count not in VALID_PHASE_COUNTS:
+            self._log(f"FAZ HATA | desteklenen: {', '.join(str(v) for v in VALID_PHASE_COUNTS)}")
+            return
+
+        if phase_count == self.phase_count:
+            return
+
+        was_active = self.bot_active
+        old_phase_count = self.phase_count
+        self.phase_count = phase_count
+        self._reset_phase_tracking()
+        if self.signal_tracker and hasattr(self.signal_tracker, "set_phase_count"):
+            self.signal_tracker.set_phase_count(phase_count)
+
+        self._log(f"FAZ SAYISI | {old_phase_count} → {phase_count}")
+        if was_active:
+            self._log("FAZ GUNCELLENDI | strateji yeniden baslatiliyor")
+            await self._disconnect()
+            await self._start()
 
     # ── Commands ─────────────────────────────────────────────────
 
@@ -358,12 +463,19 @@ class LimitBotStrategy:
                 if self._auto_task:
                     self._auto_task.cancel()
                     self._auto_task = None
+        elif action == "buy":
+            asyncio.create_task(self._do_buy(
+                cmd.get("token", "UP"),
+                cmd.get("budget", MIN_TRADE_BUDGET),
+            ))
         elif action == "sell":
             asyncio.create_task(self._do_sell(cmd.get("token", "UP")))
         elif action == "cancel":
             await self.order_mgr.cancel_all()
         elif action == "set_budget":
             await self._set_budget_value(cmd.get("budget", self.budget), source="MANUAL")
+        elif action == "set_phase_count":
+            await self._set_phase_count(cmd.get("phase_count", self.phase_count))
         elif action == "clear_history":
             self.market_history.clear()
             self._save_history()
@@ -380,6 +492,12 @@ class LimitBotStrategy:
         self._auto_mode = True
         self._auto_task = asyncio.create_task(self._auto_loop())
 
+    def _log_auto_retry(self, msg: str, interval_sec: float = 15.0):
+        now = time.time()
+        if now - self._last_auto_retry_log_ts >= interval_sec:
+            self._last_auto_retry_log_ts = now
+            self._log(msg)
+
     async def _auto_loop(self):
         while self._auto_mode:
             try:
@@ -389,6 +507,9 @@ class LimitBotStrategy:
                     mi = self.scanner._fetch_market(current_window)
                     if mi and mi.get("end_time", 0) > now + MIN_MARKET_TIME_LEFT:
                         await self._start()
+                    elif mi is None:
+                        self._log_auto_retry("[AUTO] Market verisi yok veya timeout — 3s sonra tekrar")
+                        await asyncio.sleep(3)
                     else:
                         next_window = current_window + 300
                         wait = next_window - now
@@ -461,6 +582,7 @@ class LimitBotStrategy:
             self._orderbook_stop_hit = False
             self._orderbook_stop_side = None
             self._cheap_take_fired = set()
+            self._taker_fee_paid = 0.0
 
             self.market_feed = MarketDataFeed(
                 ws_url=self.config.polymarket.ws_market_url,
@@ -470,8 +592,12 @@ class LimitBotStrategy:
             book_getter = lambda aid: self.market_feed.get_book(aid) if self.market_feed else None
             self.limit_engine.set_book_getter(book_getter)
 
-            # Signal tracker baslat (200ms = 5x/s, 10 faz x 30s)
-            self.signal_tracker = SignalTracker(book_getter)
+            # Signal tracker baslat (200ms = 5x/s, kullanici tanimli faz)
+            self.signal_tracker = SignalTracker(
+                book_getter,
+                phase_count=self.phase_count,
+                market_window_sec=MARKET_WINDOW_SEC,
+            )
             self.signal_tracker.configure(self._current_asset_ids[0], self._current_asset_ids[1])
             self.signal_tracker.on_signal(self._on_signal_change)
             self.signal_tracker.on_hedge(self._on_hedge_request)
@@ -552,8 +678,7 @@ class LimitBotStrategy:
         self._start_up_mid = ub.mid_price if ub and ub.mid_price else 0.50
         self._start_dn_mid = db.mid_price if db and db.mid_price else 0.50
         self._market_start_ts = time.time()
-        self._phase_spent = [0.0] * NUM_PHASES
-        self._current_phase = -1
+        self._reset_phase_tracking()
 
         self._izle_samples = []
         self._izle_signal = SignalState.NEUTRAL
@@ -577,7 +702,7 @@ class LimitBotStrategy:
                 elapsed = now - self._market_start_ts
                 self._tick_count += 1
                 self.order_mgr.expire_stale_orders()
-                phase = min(NUM_PHASES - 1, int(elapsed / PHASE_DURATION))
+                phase = min(self.phase_count - 1, int(elapsed / self._phase_duration()))
                 self._current_phase = phase
 
                 if time_left <= 0:
@@ -589,6 +714,9 @@ class LimitBotStrategy:
 
                 # ── Anlik yon sinyali: sadece orderbook ──
                 current_dir = self._get_preferred_direction()
+
+                # ── Son 60s: cok guclu sinyal kazanirsa karli kal ──
+                await self._enforce_final_minute_profit_floor(time_left)
 
                 if self._strategy_state != "BEKLE":
                     await self._buy_cheap_token_if_needed(time_left)
@@ -996,12 +1124,12 @@ class LimitBotStrategy:
     def _aggression_multiplier(self, direction: str) -> float:
         strength, rapid = self._signal_strength_for_direction(direction)
         phase_progress = (
-            (self._current_phase + 1) / NUM_PHASES
-            if 0 <= self._current_phase < NUM_PHASES else 0.0
+            (self._current_phase + 1) / self.phase_count
+            if 0 <= self._current_phase < self.phase_count else 0.0
         )
         sustain = 0.0
         if self._active_direction == direction and self._direction_since:
-            sustain = min(1.0, max(0.0, time.time() - self._direction_since) / PHASE_DURATION)
+            sustain = min(1.0, max(0.0, time.time() - self._direction_since) / self._phase_duration())
 
         multiplier = 1.0 + (strength * 1.8) + (phase_progress * 0.4) + (sustain * 0.6)
         if rapid:
@@ -1026,8 +1154,8 @@ class LimitBotStrategy:
 
         strength, rapid = self._signal_strength_for_direction(direction)
         phase_progress = (
-            (self._current_phase + 1) / NUM_PHASES
-            if 0 <= self._current_phase < NUM_PHASES else 0.0
+            (self._current_phase + 1) / self.phase_count
+            if 0 <= self._current_phase < self.phase_count else 0.0
         )
         phase_ratio = PHASE_BUDGET_BASE_PCT + (PHASE_BUDGET_MAX_PCT - PHASE_BUDGET_BASE_PCT) * strength
         phase_ratio += phase_progress * 0.02
@@ -1037,18 +1165,95 @@ class LimitBotStrategy:
             phase_ratio += 0.03
 
         phase_cap = min(remaining, self._budget_cap() * min(PHASE_BUDGET_MAX_PCT, phase_ratio))
-        if 0 <= self._current_phase < NUM_PHASES:
+        if 0 <= self._current_phase < self.phase_count:
             phase_cap = max(0.0, phase_cap - self._phase_spent[self._current_phase])
         return phase_cap
 
     def _record_phase_spend(self, amount: float):
         if amount <= 0:
             return
-        if 0 <= self._current_phase < NUM_PHASES:
+        if 0 <= self._current_phase < self.phase_count:
             self._phase_spent[self._current_phase] += amount
 
+    def _release_phase_spend(self, amount: float):
+        if amount <= 0:
+            return
+        if 0 <= self._current_phase < self.phase_count:
+            self._phase_spent[self._current_phase] = max(
+                0.0,
+                self._phase_spent[self._current_phase] - amount,
+            )
+
+    def _final_profit_direction(self) -> Optional[str]:
+        snap = self._latest_signal_snapshot()
+        if not snap:
+            return None
+
+        candidates = []
+        confirmed = self._signal_to_direction(snap.confirmed)
+        raw = self._signal_to_direction(snap.raw_signal)
+        if confirmed:
+            candidates.append(confirmed)
+        if raw and raw not in candidates:
+            candidates.append(raw)
+
+        for direction in candidates:
+            strength, rapid = self._signal_strength_for_direction(direction)
+            if strength >= FINAL_PROFIT_SIGNAL_STRENGTH:
+                return direction
+            if rapid and strength >= FINAL_PROFIT_RAPID_STRENGTH:
+                return direction
+        return None
+
+    def _profit_floor_budget(self, direction: str, ask_price: float) -> float:
+        """Budget needed so the strong side ends with shares > total_cost."""
+        if ask_price < MIN_BUY_PRICE or ask_price >= 1.0:
+            return 0.0
+
+        strong_shares = self._ledger_for_side(direction).shares
+        required_gap = (self.portfolio.total_cost() + FINAL_PROFIT_MARGIN_SHARES) - strong_shares
+        if required_gap <= 0:
+            return 0.0
+
+        share_edge = 1.0 - ask_price
+        if share_edge <= 0:
+            return 0.0
+
+        extra_shares = required_gap / share_edge
+        return max(0.0, extra_shares * ask_price)
+
+    async def _enforce_final_minute_profit_floor(self, time_left: float):
+        """In the final minute, top up a very strong side until payout beats cost."""
+        if time_left > FINAL_PROFIT_WINDOW or not self.market_feed:
+            return
+
+        direction = self._final_profit_direction()
+        if not direction:
+            return
+
+        idx = self._index_for_side(direction)
+        book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
+        if not book or not book.best_ask:
+            return
+
+        ask = book.best_ask
+        needed_budget = self._profit_floor_budget(direction, ask)
+        if needed_budget < MIN_EFFECTIVE_BUDGET:
+            return
+
+        budget = min(needed_budget, self._remaining_budget())
+        if budget < MIN_EFFECTIVE_BUDGET:
+            return
+
+        spent = await self._taker_buy(direction, idx, ask, budget)
+        if spent > 0:
+            self._log(
+                f"SON60 KAR KORUMASI {direction} | +${spent:.2f}@¢{ask*100:.0f} | "
+                f"{direction}sh:{self._ledger_for_side(direction).shares:.1f} cost:${self.portfolio.total_cost():.2f}"
+            )
+
     async def _buy_cheap_token_if_needed(self, time_left: float):
-        """¢15 alti token gorulurse ayni markette bir kez %5 butceyle taker al."""
+        """¢10-¢15 arasi token gorulurse ayni markette bir kez %5 butceyle taker al."""
         if time_left <= STOP_BEFORE_END or not self.market_feed:
             return
 
@@ -1070,7 +1275,7 @@ class LimitBotStrategy:
                 continue
 
             ask = book.best_ask
-            if ask <= 0 or ask > CHEAP_TAKE_PRICE:
+            if ask < MIN_BUY_PRICE or ask > CHEAP_TAKE_PRICE:
                 continue
 
             budget = self._budget_fits_risk(side, ask, desired_budget)
@@ -1086,7 +1291,7 @@ class LimitBotStrategy:
                 )
 
     def _budget_fits_risk(self, side: str, price: float, desired_budget: float) -> float:
-        if desired_budget < MIN_EFFECTIVE_BUDGET or price <= 0 or price >= 1.0:
+        if desired_budget < MIN_EFFECTIVE_BUDGET or price < MIN_BUY_PRICE or price >= 1.0:
             return 0.0
 
         max_loss = self._budget_cap() * (MAX_BUDGET_RISK_PCT / 100.0)
@@ -1222,26 +1427,32 @@ class LimitBotStrategy:
     async def _risk_reduce(self, side: str, idx: int, shares: float):
         """Risk azaltma: fazla tarafin bir kismini sat."""
         book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
-        if not book or not book.best_ask:
-            self._log(f"RISK SATIS BASARISIZ {side} | ask yok")
+        if not book or not book.best_bid:
+            self._log(f"RISK SATIS BASARISIZ {side} | bid yok")
             return
 
-        ask = book.best_ask
-        if ask <= 0 or ask >= 1.0:
+        bid = book.best_bid
+        if bid <= 0 or bid >= 1.0:
+            return
+        if shares < 5.0:
+            self._log(f"RISK SATIS BASARISIZ {side} | min 5sh gerekli")
             return
 
         order = await self.order_mgr.place_limit_order(
             asset_id=self._current_asset_ids[idx],
-            side=OrderSide.SELL, price=ask, size=shares,
+            side=OrderSide.SELL, price=bid, size=shares,
             expiration_sec=90, taker=True)
 
         if order:
             # Taker satis: aninda doldugu varsayilir
             ledger = self.portfolio.up if side == "UP" else self.portfolio.down
-            ledger.record_sell(ask, shares, 0)
-            revenue = ask * shares
+            ledger.record_sell(bid, shares, 0)
+            revenue = bid * shares
+            self._release_phase_spend(revenue)
+            self._archive_fill(side, bid, shares, revenue, liquidity="TAKER-SELL", fee=0.0)
+            self.stats["orders_sent"] += 1
             self._log(
-                f"RISK SATIS {side} | {shares:.0f}sh @¢{ask*100:.0f} = ${revenue:.2f} | "
+                f"RISK SATIS {side} | {shares:.0f}sh @¢{bid*100:.0f} = ${revenue:.2f} | "
                 f"UP:{self.portfolio.up.shares:.0f} DN:{self.portfolio.down.shares:.0f}"
             )
             self.stats["fills"] += 1
@@ -1310,7 +1521,13 @@ class LimitBotStrategy:
             )
 
     async def _maker_buy(self, side: str, idx: int, bid_price: float, budget: float) -> float:
-        """Orderbook bid seviyelerine dagitarak maker BUY emirleri koy.
+        """Hibrit alim: maker emir koy → bekle → poll → dolmayani taker ile tamamla.
+
+        1. Top 5 bid seviyesine maker emir dagit
+        2. 3 saniye bekle
+        3. API'den gercek dolum sorgula (poll)
+        4. Dolmus emirleri portfolio'ya kaydet
+        5. Dolmayanlari iptal et → kalan butceyi taker ile tamamla
 
         ¢90+ fiyattan emir GONDERMEZ.
         Maliyet bloklu taraf icin emir gondermez.
@@ -1322,21 +1539,22 @@ class LimitBotStrategy:
         budget = min(budget, self._remaining_budget())
         if bid_price >= ORDERBOOK_STOP_PRICE:
             return 0.0
-        if budget < MIN_EFFECTIVE_BUDGET or bid_price <= 0:
+        if budget < MIN_EFFECTIVE_BUDGET or bid_price < MIN_BUY_PRICE:
             return 0.0
 
         book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
         if not book or not book.bids:
             return 0.0
 
-        # Top 5 bid seviyesine dagit
+        # ── Adim 1: Top 5 bid seviyesine maker emir dagit ──
         levels = book.bids[:5]
         per_level = budget / len(levels)
         total_placed = 0.0
+        placed_orders: list[tuple] = []  # (order, price, size)
 
         for level in levels:
             price = level.price
-            if price <= 0 or price >= ORDERBOOK_STOP_PRICE:
+            if price < MIN_BUY_PRICE or price >= ORDERBOOK_STOP_PRICE:
                 continue
 
             remaining_budget = budget - total_placed
@@ -1359,16 +1577,64 @@ class LimitBotStrategy:
                 side=OrderSide.BUY, price=price, size=size,
                 expiration_sec=90, taker=False)
             if order:
+                placed_orders.append((order, price, size))
                 total_placed += cost
                 self.stats["orders_sent"] += 1
 
-        self._record_phase_spend(total_placed)
-        return total_placed
+        if not placed_orders:
+            return 0.0
+
+        # ── Adim 2: 3 saniye bekle ──
+        await asyncio.sleep(3.0)
+
+        # ── Adim 3: Gercek dolum sorgula ──
+        order_ids = [o.order_id for o, _, _ in placed_orders]
+        fill_results = await self.order_mgr.poll_order_fills(order_ids)
+
+        # ── Adim 4: Dolmus emirleri portfolio'ya kaydet ──
+        total_filled_cost = 0.0
+        total_filled_shares = 0.0
+        unfilled_budget = 0.0
+        ledger = self.portfolio.up if side == "UP" else self.portfolio.down
+
+        for order, price, size in placed_orders:
+            filled = fill_results.get(order.order_id, 0.0)
+
+            if filled > 0:
+                ledger.record_buy(price, filled, 0)
+                fill_cost = price * filled
+                total_filled_cost += fill_cost
+                total_filled_shares += filled
+                self._archive_fill(side, price, filled, fill_cost, liquidity="MAKER", fee=0.0)
+                self.stats["fills"] += 1
+                self._log(f"MAKER DOLUM {side} {filled:.0f}sh @¢{price*100:.0f}")
+
+            # Dolmayan kismi hesapla
+            unfilled_qty = size - filled
+            if unfilled_qty > 0:
+                unfilled_budget += price * unfilled_qty
+
+            # Emri iptal et (dolmus veya dolmamis — temizle)
+            if order.order_id in self.order_mgr.active_orders:
+                await self.order_mgr.cancel_order(order.order_id)
+
+        # ── Adim 5: Dolmayani taker ile tamamla ──
+        if unfilled_budget >= MIN_EFFECTIVE_BUDGET:
+            taker_budget = min(unfilled_budget, self._remaining_budget())
+            fresh_book = self.market_feed.get_book(self._current_asset_ids[idx]) if self.market_feed else None
+            if fresh_book and fresh_book.best_ask and fresh_book.best_ask < ORDERBOOK_STOP_PRICE:
+                taker_cost = await self._taker_buy(side, idx, fresh_book.best_ask, taker_budget)
+                if taker_cost > 0:
+                    total_filled_cost += taker_cost
+                    self._log(f"TAKER TAMAMLA {side} | ${taker_cost:.2f} @¢{fresh_book.best_ask*100:.0f}")
+
+        self._record_phase_spend(total_filled_cost)
+        return total_filled_cost
 
     async def _taker_buy(self, side: str, idx: int, ask_price: float, budget: float) -> float:
         """Best ask'tan taker BUY emri gonder. Harcanan tutari dondurur."""
         budget = min(budget, self._remaining_budget())
-        if budget < MIN_EFFECTIVE_BUDGET or ask_price <= 0 or ask_price >= 1.0:
+        if budget < MIN_EFFECTIVE_BUDGET or ask_price < MIN_BUY_PRICE or ask_price >= 1.0:
             return 0.0
 
         size = round(budget / ask_price, 1)
@@ -1390,7 +1656,9 @@ class LimitBotStrategy:
             # Taker emir aninda dolar — portfolio'ya kaydet
             ledger = self.portfolio.up if side == "UP" else self.portfolio.down
             ledger.record_buy(ask_price, size, 0)
-            self._archive_fill(side, ask_price, size, cost)
+            fee = self._estimate_taker_fee(self._current_asset_ids[idx], ask_price, size)
+            self._taker_fee_paid += fee
+            self._archive_fill(side, ask_price, size, cost, liquidity="TAKER", fee=fee)
             self._record_phase_spend(cost)
             self.stats["orders_sent"] += 1
             self.stats["fills"] += 1
@@ -1502,79 +1770,81 @@ class LimitBotStrategy:
             refs = self._capture_runtime_refs(include_monitor=False)
             await self._stop_runtime_refs(refs)
 
+    # ── Manual trade controls ─────────────────────────────────────
+
+    async def _do_buy(self, token: str, budget: float):
+        """Dashboard manuel alim: secilen tarafa taker buy gonder."""
+        side = "UP" if str(token).upper() == "UP" else "DOWN"
+        idx = self._index_for_side(side)
+
+        try:
+            requested_budget = float(budget)
+        except (TypeError, ValueError):
+            requested_budget = 0.0
+
+        if not self.bot_active:
+            self._log(f"ALIM {side}: bot aktif degil")
+            return
+        if requested_budget < MIN_EFFECTIVE_BUDGET:
+            self._log(f"ALIM {side}: min ${MIN_EFFECTIVE_BUDGET:.2f}")
+            return
+        if not self.market_feed or not self._current_asset_ids or len(self._current_asset_ids) <= idx:
+            self._log(f"ALIM {side}: market yok")
+            return
+
+        book = self.market_feed.get_book(self._current_asset_ids[idx])
+        if not book or not book.best_ask:
+            self._log(f"ALIM {side}: ask yok")
+            return
+
+        ask = book.best_ask
+        budget_cap = min(requested_budget, self._remaining_budget())
+        fitted_budget = self._budget_fits_risk(side, ask, budget_cap)
+        if fitted_budget < MIN_EFFECTIVE_BUDGET:
+            self._log(f"ALIM {side}: risk/butce limiti")
+            return
+
+        spent = await self._taker_buy(side, idx, ask, fitted_budget)
+        if spent > 0:
+            self._log(
+                f"MANUEL ALIM {side} | ${spent:.2f}@¢{ask*100:.0f} | "
+                f"UP:{self.portfolio.up.shares:.0f}sh DN:{self.portfolio.down.shares:.0f}sh"
+            )
+
     # ── Sell (devre disi — buy-only bot) ──────────────────────────
 
     async def _do_sell(self, token: str):
-        """Buy-only bot: satis devre disi."""
-        self._log(f"SATIS {token}: devre disi (buy-only bot)")
+        """Dashboard manuel satis: secilen token pozisyonunu taker olarak bosalt."""
+        side = "UP" if str(token).upper() == "UP" else "DOWN"
+        idx = self._index_for_side(side)
+        ledger = self._ledger_for_side(side)
+
+        if not self.bot_active:
+            self._log(f"SATIS {side}: bot aktif degil")
+            return
+        if not self.market_feed or not self._current_asset_ids or len(self._current_asset_ids) <= idx:
+            self._log(f"SATIS {side}: market yok")
+            return
+        if ledger.shares <= 0:
+            self._log(f"SATIS {side}: pozisyon yok")
+            return
+
+        await self._risk_reduce(side, idx, round(ledger.shares, 1))
 
     # ── Fill tracking ────────────────────────────────────────────
 
     def _on_trade(self, asset_id: str, trade: LastTrade):
-        # Senkron callback — portfolio ve order state'i atomik guncelle
+        """Trade stream callback — sadece orderbook/sinyal guncelleme icin kullanilir.
+
+        ONEMLI: Maker dolum takibi artik burada yapilmiyor.
+        Maker dolumlar _maker_buy() icindeki poll mekanizmasiyla dogrulaniyor.
+        Bu callback sadece trade stream'in aktif oldugunu dogrulamak
+        ve sinyal/yon takibi icin kullanilir.
+        """
         if not self.bot_active:
             return
-        is_up = (asset_id == self._current_asset_ids[0]) if self._current_asset_ids else True
-        ledger = self.portfolio.up if is_up else self.portfolio.down
-        tok = "UP" if is_up else "DOWN"
-
-        # Kalan trade boyutunu emirlere sırayla dağıt
-        remaining = trade.size
-
-        # Fiyat önceliğine göre sırala: BUY → yüksek fiyat önce, SELL → düşük fiyat önce
-        orders = self.order_mgr.get_live_orders(asset_id)
-        buys = sorted([o for o in orders if o.side == OrderSide.BUY], key=lambda o: o.price, reverse=True)
-        sells = sorted([o for o in orders if o.side == OrderSide.SELL], key=lambda o: o.price)
-        orders = buys + sells
-
-        for order in orders:
-            if remaining <= 0:
-                break
-
-            # Trade side = taker yonu: "BUY" trade → resting SELL emirleri doldu
-            #                         "SELL" trade → resting BUY emirleri doldu
-            # Karsi taraf eslesmesi: trade side ile ayni yondeki emirler doldurulmaz
-            if trade.side:
-                taker_side = trade.side.upper()
-                if taker_side == "BUY" and order.side == OrderSide.BUY:
-                    continue  # BUY trade sadece SELL emirlerini doldurur
-                if taker_side == "SELL" and order.side == OrderSide.SELL:
-                    continue  # SELL trade sadece BUY emirlerini doldurur
-
-            price_match = False
-            if order.side == OrderSide.BUY and trade.price <= order.price:
-                price_match = True
-            elif order.side == OrderSide.SELL and trade.price >= order.price:
-                price_match = True
-
-            if not price_match:
-                continue
-
-            # Emirden kalan dolmamış miktar
-            unfilled = order.size - order.filled_size
-            if unfilled <= 0:
-                continue
-
-            # Trade'den bu emre düşen miktar
-            fill_qty = min(remaining, unfilled)
-            remaining -= fill_qty
-            order.filled_size += fill_qty
-
-            # Buy-only bot: sadece BUY emirleri doldurulur
-            if order.side != OrderSide.BUY:
-                continue
-
-            ledger.record_buy(order.price, fill_qty, 0)
-            self._archive_fill(tok, order.price, fill_qty, order.price * fill_qty)
-            t = "YKR" if is_up else "ASG"
-            self._log(f"DOLUM {t} {fill_qty:.0f}sh @¢{order.price*100:.0f}")
-
-            self.stats["fills"] += 1
-
-            # Emir tamamen doldu mu?
-            if order.filled_size >= order.size:
-                order.status = "MATCHED"
-                self.order_mgr.active_orders.pop(order.order_id, None)
+        # Trade stream aktiflik isaretcisi (sinyal takibi icin)
+        self._last_trade_ts = time.time()
 
     def _get_prices(self) -> tuple[float, float]:
         up_p = dn_p = 0.0
